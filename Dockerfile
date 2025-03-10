@@ -10,8 +10,6 @@ RUN poetry install --no-interaction --no-ansi
 
 COPY src /app/src
 
-RUN poetry install --no-interaction --no-ansi
-
 WORKDIR /app/src/schedule_vvsu
 
 CMD ["poetry", "run", "python", "-m", "schedule_vvsu.cli.main", "--help"]
