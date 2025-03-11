@@ -118,6 +118,8 @@ PARSING_INTERVALS=9:00,14:00,17:00
 
 Запуск CLI для управления:
 
+### Вариант A: Сразу через poetry run
+
 ```bash
 poetry run python -m schedule_vvsu.cli.main --help
 ```
@@ -126,6 +128,26 @@ poetry run python -m schedule_vvsu.cli.main --help
 
 ```bash
 poetry run python -m schedule_vvsu.scheduler
+```
+
+### Вариант B: Через интерактивную оболочку
+
+Активировать окружение:
+```bash
+poetry shell
+```
+
+Вызвать CLI напрямую:
+```bash
+vvsu-cli --help
+```
+
+```bash
+vvsu-cli start-scheduler
+```
+
+```bash
+vvsu-cli stop-scheduler
 ```
 
 ---
