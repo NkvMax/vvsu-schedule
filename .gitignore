@@ -1,0 +1,32 @@
+# Скомпилированные Python-файлы
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Логи тестов и временные файлы
+.pytest_cache/
+*.log
+
+# Poetry / Python env
+.venv/
+venv/
+ENV/
+env/
+
+# Папки сборки Python (setuptools/dist)
+build/
+dist/
+*.egg-info/
+*.egg
+
+
+# Vim swap
+*.swp
+*.swo
+*~
+
+# VSCode
+.vscode/
+
+# PyCharm / IntelliJ
+.idea/
