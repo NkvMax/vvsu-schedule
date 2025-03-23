@@ -1,0 +1,8 @@
+version: "3.8"
+
+services:
+  schedule-sync:
+    build: .
+    image: schedule-vvsu:latest
+    container_name: schedule-sync
+    command: ["poetry", "run", "python", "-m", "schedule_vvsu.cli.main", "start-scheduler"]
