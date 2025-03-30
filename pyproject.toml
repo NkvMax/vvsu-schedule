@@ -66,9 +66,9 @@ typing_extensions = "4.12.2"
 tzlocal = "5.3.1"
 uritemplate = "4.1.1"
 urllib3 = "2.3.0"
-uvicorn = "0.34.0"
 websocket-client = "1.8.0"
 wsproto = "1.2.0"
+webdriver-manager = "^4.0.2"
 
 [tool.poetry.scripts]
 vvsu-cli = "schedule_vvsu.cli.main:main"
