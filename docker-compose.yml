@@ -1,8 +1,19 @@
-version: "3.8"
-
 services:
+  chrome-standalone:
+    image: selenium/standalone-chrome
+    container_name: chrome-standalone
+    platform: linux/amd64
+    ports:
+      - "4444:4444"
+
   schedule-sync:
     build: .
-    image: schedule-vvsu:latest
     container_name: schedule-sync
-    command: ["poetry", "run", "python", "-m", "schedule_vvsu.cli.main", "start-scheduler"]
+    depends_on:
+      - chrome-standalone
+    environment:
+      SELENIUM_REMOTE_URL: "http://chrome-standalone:4444/wd/hub"
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
