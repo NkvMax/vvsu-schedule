@@ -1,15 +1,34 @@
 FROM python:3.9-slim
 
-WORKDIR /app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
-RUN pip install --no-cache-dir poetry==1.6.1
+# Добавляем src в PYTHONPATH, чтобы пакет schedule_vvsu был доступен как установленный пакет
+ENV PYTHONPATH="/vvsu-schedule/src"
 
-COPY pyproject.toml poetry.lock /app/
+WORKDIR /vvsu-schedule
 
-RUN poetry install --no-interaction --no-ansi
+# Устанавливаем системные зависимости (curl, wget, gnupg, unzip)
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    gnupg \
+    unzip && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-COPY src /app/src
+# Устанавливаем Poetry
+RUN pip install --no-cache-dir poetry==2.1.1
 
-WORKDIR /app/src/schedule_vvsu
+# Отключаем создание виртуальных окружений, чтобы Poetry устанавливал зависимости прямо в образе
+RUN poetry config virtualenvs.create false
 
-CMD ["poetry", "run", "python", "-m", "schedule_vvsu.cli.main", "--help"]
+# Копируем файлы описания зависимостей
+COPY pyproject.toml poetry.lock ./
+
+# Устанавливаем зависимости и сам пакет (без использования --no-root, чтобы проект был установлен как пакет)
+RUN poetry install --no-interaction --no-ansi --no-root
+
+# Копируем исходный код проекта из каталога src
+COPY src ./src
+
+CMD ["python", "-m", "src.schedule_vvsu.scheduler"]
