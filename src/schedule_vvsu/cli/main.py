@@ -3,9 +3,16 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 import subprocess, signal, os
+from datetime import datetime
+
+from apscheduler.schedulers.blocking import BlockingScheduler
+
 from schedule_vvsu.config import settings
 from schedule_vvsu.google_calendar.auth import authenticate_google_calendar
-from schedule_vvsu.google_calendar.calendar import list_calendars, remove_calendar
+from schedule_vvsu.google_calendar.calendar import list_calendars, remove_calendar, get_or_create_calendar
+from schedule_vvsu.google_calendar.sync import sync_schedule_to_calendar
+from schedule_vvsu.parser import parse_schedule, save_to_json
+from typing import Optional
 
 # Настройка логирования
 LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
@@ -25,6 +32,7 @@ logger.addHandler(log_handler)
 # Создаем Typer-приложение
 app = typer.Typer()
 
+# scheduler_process: Optional[subprocess.Popen] = None
 scheduler_process = None  # Глобальная переменная для хранения PID процесса
 
 
@@ -88,22 +96,61 @@ def stop_scheduler():
     logger.info("Команда stop_scheduler()")
     global scheduler_process
     if not scheduler_process or scheduler_process.poll() is not None:
-        typer.echo("w")
+        typer.echo("Scheduler уже остановлен.")
         return
 
     # Посылаем сигнал SIGTERM
     scheduler_process.terminate()
-    typer.echo("Scheduler остановлен.")
+    scheduler_process.wait()
     logger.info("Scheduler остановлен.")
+    typer.echo("Scheduler остановлен.")
+
+
+@app.command()
+def sync_now():
+    """
+    Немедленно запускает синхронизацию расписания с Google Calendar.
+    """
+    logger.info("Запуск немедленной синхронизации расписания.")
+    schedule = parse_schedule()
+    if not schedule:
+        logger.error("Не удалось получить расписание.")
+        return
+
+    save_to_json(schedule)
+    service = authenticate_google_calendar()
+    calendar_name = settings.CALENDAR_NAME  # Название календаря
+    calendar_id = get_or_create_calendar(service, calendar_name)
+    sync_schedule_to_calendar(service, schedule, calendar_id)
+    logger.info("Синхронизация завершена успешно.")
+    print("Синхронизация завершена успешно.")
+
+
+def job():
+    print(f"[{datetime.now()}] Запускается задача синхронизации.")
+    schedule = parse_schedule()
+    if schedule:
+        save_to_json(schedule)
+        service = authenticate_google_calendar()
+        calendar_name = settings.CALENDAR_NAME
+        calendar_id = get_or_create_calendar(service, calendar_name)
+        sync_schedule_to_calendar(service, schedule, calendar_id)
+        print(f"[{datetime.now()}] Задача синхронизации завершена.")
+    else:
+        logging.error("Не удалось получить расписание.")
 
 
 def main():
-    """
-    Точка входа в CLI.
-    """
-    logger.info("Запуск CLI для управления календарями.")
-    app()
+    scheduler = BlockingScheduler()
 
+    intervals = settings.PARSING_INTERVALS.split(",")
+    for interval in intervals:
+        hour, minute = map(int, interval.strip().split(":"))
+        scheduler.add_job(job, 'cron', hour=hour, minute=minute)
+        print(f"Задача добавлена на запуск в {hour:02d}:{minute:02d}.")
 
-if __name__ == "__main__":
-    main()
+    print("Планировщик запущен и ожидает задач.")
+    try:
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
+        print("Планировщик остановлен.")
