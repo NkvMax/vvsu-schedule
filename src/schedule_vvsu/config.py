@@ -28,26 +28,29 @@ class Settings(BaseSettings):
         env="SERVICE_ACCOUNT_FILE"
     )
 
-    # Другие настройки
+    # Настройки авторизации и парсинга
     LOGIN_URL: str = Field(..., env="LOGIN_URL")
     SCHEDULE_URL: str = Field(..., env="SCHEDULE_URL")
     USERNAME: str = Field(..., env="USERNAME")
     PASSWORD: str = Field(..., env="PASSWORD")
+
+    # Часовой пояс по умолчанию
     TIMEZONE: str = Field("Asia/Vladivostok", env="TIMEZONE")
+
+    # Время (или интервал) синхронизации
     SYNC_TIME: str = Field("09:00", env="SYNC_TIME")
     CALENDAR_NAME: str = Field("Расписание ВВГУ", env="CALENDAR_NAME")
 
-    # Флаг для режима разработки: если True, запускается синхронизация сразу
+    # Режимы и интервалы
     DEV_MODE: bool = Field(False, env="DEV_MODE")
-
-    # Флаг для активации автоматического запуска по интервалам из docker
     ACTIVATE_DOCKER_TIME_SETTINGS: bool = Field(False, env="ACTIVATE_DOCKER_TIME_SETTINGS")
-
-    # Интервалы парсинга, например "9:00,14:00,17:00"
     PARSING_INTERVALS: str = Field("9:00", env="PARSING_INTERVALS")
 
+    # Для управления локальным / удаленным Chrome
+    USE_REMOTE_CHROME: bool = Field(False, env="USE_REMOTE_CHROME")
+    SELENIUM_REMOTE_URL: str = Field("http://localhost:4444", env="SELENIUM_REMOTE_URL")
+
     class Config:
-        # env_file = Path(__file__).resolve().parent / ".env"
         env_file = BASE_DIR / ".env"
         env_file_encoding = "utf-8"
 
