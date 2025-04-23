@@ -1,19 +1,19 @@
 import os
 import time
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
+
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from webdriver_manager.chrome import ChromeDriverManager
-from dotenv import load_dotenv
-from schedule_vvsu.dto.models import Lesson  # DTO-модель
-
-# use_remote = os.getenv("USE_REMOTE_CHROME", "false").lower() == "true"
-
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.common.exceptions import WebDriverException
+from schedule_vvsu.dto.models import Lesson
 
 # Загрузка переменных из .env
 load_dotenv()
@@ -22,35 +22,48 @@ USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
 LOGIN_URL = os.getenv("LOGIN_URL")
 SCHEDULE_URL = os.getenv("SCHEDULE_URL")
-USE_REMOTE_CHROME = os.getenv("USE_REMOTE_CHROME", "false").lower() == "true"
+USE_REMOTE = os.getenv("USE_REMOTE_CHROME", "false").lower() == "true"
 SELENIUM_REMOTE_URL = os.getenv("SELENIUM_REMOTE_URL", "http://localhost:4444/wd/hub")
 
 BASE_DIR = Path(__file__).resolve().parent
 JSON_DIR = BASE_DIR / "json"
 JSON_DIR.mkdir(exist_ok=True)
 
+logger = logging.getLogger(__name__)
+MAX_RETRIES = 3
+RETRY_DELAY = 5  # секунд
 
-def get_webdriver():
+
+def get_webdriver() -> webdriver.Firefox:
     """
-    Инициализирует WebDriver в зависимости от режима работы (локальный или удаленный).
+    Инициализирует Firefox WebDriver (удаленный или локальный).
     """
-    options = webdriver.ChromeOptions()
+    options = FirefoxOptions()
     options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--width=1280")
+    options.add_argument("--height=720")
 
-    if USE_REMOTE_CHROME:
-        print(f"[{datetime.now()}] Используется удаленный Chrome WebDriver: {SELENIUM_REMOTE_URL}")
-        return webdriver.Remote(
-            command_executor=SELENIUM_REMOTE_URL,
-            options=options
-        )
-    else:
-        print(f"[{datetime.now()}] Используется локальный Chrome WebDriver.")
-        return webdriver.Chrome(
-            service=webdriver.chrome.service.Service(ChromeDriverManager().install()),
-            options=options
-        )
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            if USE_REMOTE:
+                logger.info(
+                    f"[{datetime.now()}] Подключение к удаленному Firefox WebDriver: {SELENIUM_REMOTE_URL} (попытка {attempt})")
+                driver = webdriver.Remote(
+                    command_executor=SELENIUM_REMOTE_URL,
+                    options=options
+                )
+            else:
+                logger.info(f"[{datetime.now()}] Запуск локального Firefox WebDriver (попытка {attempt})")
+                driver = webdriver.Firefox(options=options)
+
+            driver.implicitly_wait(10)
+            return driver
+
+        except WebDriverException as exc:
+            logger.warning(f"[{datetime.now()}] Ошибка подключения (попытка {attempt}): {exc.msg}")
+            if attempt == MAX_RETRIES:
+                raise RuntimeError("Не удалось создать сессию WebDriver") from exc
+            time.sleep(RETRY_DELAY)
 
 
 def parse_schedule() -> list[Lesson]:
