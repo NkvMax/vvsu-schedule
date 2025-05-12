@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
     # Для управления локальным / удаленным Chrome
     USE_REMOTE_CHROME: bool = Field(False, env="USE_REMOTE_CHROME")
-    SELENIUM_REMOTE_URL: str = Field("http://localhost:4444", env="SELENIUM_REMOTE_URL")
+    SELENIUM_REMOTE_URL: str = Field("http://firefox:4444/wd/hub", env="SELENIUM_REMOTE_URL")
 
     class Config:
         env_file = BASE_DIR / ".env"
