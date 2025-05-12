@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y \
     unzip && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Копируем исходный код проекта из каталога src
+COPY src ./src
+
 # Устанавливаем Poetry
 RUN pip install --no-cache-dir poetry==2.1.1
 
@@ -26,9 +29,9 @@ RUN poetry config virtualenvs.create false
 COPY pyproject.toml poetry.lock ./
 
 # Устанавливаем зависимости и сам пакет (без использования --no-root, чтобы проект был установлен как пакет)
-RUN poetry install --no-interaction --no-ansi --no-root
+RUN poetry install --no-interaction --no-ansi
 
-# Копируем исходный код проекта из каталога src
-COPY src ./src
+RUN poetry self add poetry-plugin-shell
 
-CMD ["python", "-m", "src.schedule_vvsu.scheduler"]
+ENV TZ=Asia/Vladivostok
+RUN apt-get install -y tzdata
