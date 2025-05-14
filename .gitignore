@@ -35,3 +35,7 @@ dist/
 /src/schedule_vvsu/json/schedule.json
 /src/schedule_vvsu/json/credentials/service_account.json
 /src/schedule_vvsu/json/credentials/user_account.json
+
+# macOS
+.DS_Store
+**/.DS_Store
