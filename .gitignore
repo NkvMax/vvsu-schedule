@@ -30,3 +30,8 @@ dist/
 
 # PyCharm / IntelliJ
 .idea/
+/src/schedule_vvsu/json/excluded_lessons.json
+/src/schedule_vvsu/json/previous_schedule.json
+/src/schedule_vvsu/json/schedule.json
+/src/schedule_vvsu/json/credentials/service_account.json
+/src/schedule_vvsu/json/credentials/user_account.json
