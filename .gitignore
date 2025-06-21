@@ -6,6 +6,9 @@ __pycache__/
 # Логи тестов и временные файлы
 .pytest_cache/
 *.log
+/src/logs/sync_log.log*
+error.html
+error.png
 
 # Poetry / Python env
 .venv/
@@ -39,3 +42,6 @@ dist/
 # macOS
 .DS_Store
 **/.DS_Store
+
+# Конфиденциальные файлы проекта
+.env
