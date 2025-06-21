@@ -1,37 +1,40 @@
+# Stage 1: Frontend build
+FROM --platform=linux/amd64 node:20 AS frontend-build
+
+WORKDIR /frontend
+
+COPY src/frontend/package*.json ./
+RUN npm ci
+
+COPY src/frontend ./
+
+RUN npm run build
+
+# Stage 2: Backend setup
 FROM python:3.9-slim
 
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-
-# Добавляем src в PYTHONPATH, чтобы пакет schedule_vvsu был доступен как установленный пакет
-ENV PYTHONPATH="/vvsu-schedule/src"
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH="/vvsu-schedule/src" \
+    TZ=Asia/Vladivostok
 
 WORKDIR /vvsu-schedule
 
-# Устанавливаем системные зависимости (curl, wget, gnupg, unzip)
-RUN apt-get update && apt-get install -y \
-    curl \
-    wget \
-    gnupg \
-    unzip && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl tzdata ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# Копируем исходный код проекта из каталога src
-COPY src ./src
+RUN pip install --no-cache-dir poetry==2.1.1 \
+    && poetry config virtualenvs.create false \
+    && poetry self add poetry-plugin-shell
 
-# Устанавливаем Poetry
-RUN pip install --no-cache-dir poetry==2.1.1
-
-# Отключаем создание виртуальных окружений, чтобы Poetry устанавливал зависимости прямо в образе
-RUN poetry config virtualenvs.create false
-
-# Копируем файлы описания зависимостей
 COPY pyproject.toml poetry.lock ./
-
-# Устанавливаем зависимости и сам пакет (без использования --no-root, чтобы проект был установлен как пакет)
+COPY alembic.ini ./
+COPY alembic ./alembic
+COPY src ./src
 RUN poetry install --no-interaction --no-ansi
 
-RUN poetry self add poetry-plugin-shell
+# Копируем статический билд фронта
+COPY --from=frontend-build /frontend/dist ./src/frontend/dist
 
-ENV TZ=Asia/Vladivostok
-RUN apt-get install -y tzdata
+CMD ["poetry", "run", "uvicorn", "schedule_vvsu.api:app", "--host", "0.0.0.0", "--port", "8000"]

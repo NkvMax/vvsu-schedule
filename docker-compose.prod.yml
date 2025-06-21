@@ -1,56 +1,123 @@
-version: "3.8"
+#  schedule-vvsu production
+# ===========================
+# Стек:
+#   - Postgres            – БД
+#   - Selenium-Firefox    – headless браузер для парсинга
+#   - schedule-sync       – планировщик/парсер
+#   - schedule-api        – FastAPI + SPA
+#   - schedule-bot        – Telegram-бот
+#   - Caddy               – HTTPS-reverse-proxy
+#
+# Все образы собираются из production-Dockerfile (`Dockerfile`).
+# Настройки передаются через корневой `.env`.
 
 services:
-  firefox:
+  # Postgres
+  postgres:
+    image: postgres:16-alpine
+    container_name: vvsu-postgres
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [selenium_net]
+
+  # Selenium
+  selenium:
     image: selenium/standalone-firefox:137.0.1
-    container_name: firefox
+    container_name: vvsu-selenium
     shm_size: 2gb
-    ports:
-      - "4444:4444"  # WebDriver API
-    networks:
-      - selenium_net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4444/wd/hub/status"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
-    environment:
-      - SE_NODE_SESSION_TIMEOUT=60
-      - SE_NODE_MAX_SESSIONS=1
-      - SE_JAVA_OPTS=-Dwebdriver.log.file=/tmp/selenium.log
+    networks: [selenium_net]
 
+  # Планировщик / синхронизация
   schedule-sync:
-    build: .
-    container_name: schedule-sync
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vvsu-schedule-sync:1.0.0
+    container_name: vvsu-schedule-sync
+    env_file: .env
     depends_on:
-      firefox:
+      postgres:
         condition: service_healthy
-    env_file:
-      - .env
+      selenium:
+        condition: service_healthy
+    command: >
+      poetry run alembic upgrade head &&
+      poetry run python -m schedule_vvsu.scheduler
     volumes:
-      - ./logs:/app/src/schedule_vvsu/logs
-      - ./src/schedule_vvsu/json:/app/src/schedule_vvsu/json
-    networks:
-      - selenium_net
-    command: ["vvsu-cli", "start-scheduler"]
+      - logs:/app/src/schedule_vvsu/logs
+    networks: [selenium_net]
 
-  api:
-    build: .
-    container_name: schedule-api
+  # Backend API
+  schedule-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vvsu-schedule-api:1.0.0
+    container_name: vvsu-schedule-api
+    env_file: .env
     depends_on:
-      firefox:
+      postgres:
         condition: service_healthy
-    env_file:
-      - .env
+      selenium:
+        condition: service_healthy
+    command: >
+      poetry run uvicorn schedule_vvsu.api:app
+      --host 0.0.0.0 --port 8000
+    expose: ["8000"]
     volumes:
-      - ./logs:/app/src/schedule_vvsu/logs
-      - ./src/schedule_vvsu/json:/app/src/schedule_vvsu/json
+      - logs:/app/src/schedule_vvsu/logs
+    networks: [selenium_net]
+
+  # Telegram-бот
+  schedule-bot:
+    build:
+      context: ./src/tg_bot
+      dockerfile: Dockerfile
+    image: vvsu-schedule-bot:1.0.0
+    container_name: vvsu-schedule-bot
+    env_file: .env
+    depends_on:
+      - schedule-api
+    command: poetry run python -m app.bot
+    networks: [selenium_net]
+
+  # Reverse-proxy
+  caddy:
+    image: caddy:2
+    container_name: vvsu-caddy
+    depends_on:
+      - schedule-api
     ports:
-      - "8000:8000"
-    networks:
-      - selenium_net
-    command: ["poetry", "run", "uvicorn", "schedule_vvsu.api:app", "--host", "0.0.0.0", "--port", "8000"]
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [selenium_net]
+
+# volumes & networks
+volumes:
+  pgdata:
+  logs:
+  caddy_data:
+  caddy_config:
 
 networks:
   selenium_net:
