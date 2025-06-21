@@ -1,0 +1,91 @@
+/* Reset и box-sizing */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* Переменные темы */
+:root {
+    --bg: #121315;
+    --text: #f3f3f3;
+    --accent: #5e9eff;
+    --card-bg: #1b1c1f;
+    --card-border: rgba(255, 255, 255, 0.05);
+}
+
+/* Переменные светлой темы */
+[data-theme="light"] {
+    --bg: #ffffff;
+    --text: #1b1b1f;
+    --accent: #0066ff;
+    --card-bg: #f7f7f8;
+    --card-border: rgba(0, 0, 0, 0.1);
+}
+
+/* Общие правила */
+body {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    background-color: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.6s ease, color 0.6s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+    transition: all 0.3s ease;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+ul {
+    list-style: none;
+}
+
+button {
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+    background: none;
+    border: none;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.theme-transition-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background-color: white;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.8s ease;
+}
+
+.page-wrapper {
+    max-width: 960px;
+    width: 100%;
+    padding: 0 2rem 2rem;
+}

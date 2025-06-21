@@ -1,0 +1,106 @@
+/* обертка */
+.logs-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-top: .6rem;
+  transition: max-width .3s ease, margin-top .3s ease;
+}
+
+/* раскрытый режим по кнопке "раскрыть" */
+.logs-wrapper.full-width {
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100vw - 4rem);
+  max-width: 1200px;
+  margin-top: 1.25rem;
+}
+
+/* сама панель */
+.logs-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background: #08121E;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.45),
+              0 0 0 1px rgba(255,255,255,.02) inset;
+  overflow: hidden;
+  transition: border-radius .25s ease, max-height .3s ease;
+}
+
+.logs-panel.expanded {
+  border-radius: 14px;
+  background: #08121E;
+  box-shadow:
+      0 6px 18px rgba(0,0,0,.45),
+      0 0 0 1px rgba(255,255,255,.02) inset;
+}
+
+/* заголовок */
+.logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .7rem 1rem;
+  background: #0d1725;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+
+.logs-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.toggle-btn {
+  font-size: .85rem;
+  padding: .25rem .6rem;
+  border: 1px solid rgba(255,255,255,.15);
+  border-radius: 6px;
+  background: rgba(255,255,255,.04);
+  color: #c7d4e9;
+  cursor: pointer;
+  transition: background .2s;
+}
+.toggle-btn:hover { background: rgba(255,255,255,.10); }
+
+/* тело */
+.logs-body {
+  height: 320px;
+  overflow-y: auto;
+  padding: .6rem 1rem;
+  font-family: "Fira Code", monospace;
+  font-size: .82rem;
+  color: #e1eaf7;
+  background: #000;
+}
+
+/* оформление строк */
+pre { margin: 0; white-space: pre-wrap; }
+
+.log-datetime { color: #999;  margin-right:.5em; }
+.log-level    { font-weight:600; margin-right:.5em; }
+.log-info     { color: #5dd68b; }
+.log-warning  { color: #ffbe66; }
+.log-error    { color: #f56969; }
+.log-debug    { color: #9e9e9e; }
+
+/* пустое состояние */
+.empty {
+  text-align:center;
+  color:#777;
+  margin-top:1rem;
+}
+
+/* адаптивность */
+@media (max-width: 600px) {
+  .logs-wrapper.full-width {
+    width: 100vw;
+    margin-top: 0.5rem;
+  }
+  .logs-panel.expanded { border-radius: 0; }
+}

@@ -29,10 +29,28 @@ services:
     env_file:
       - .env
     volumes:
-      - ./logs:/app/logs
+      - ./logs:/app/src/schedule_vvsu/logs
+      - ./src/schedule_vvsu/json:/app/src/schedule_vvsu/json
     networks:
       - selenium_net
     command: ["vvsu-cli", "start-scheduler"]
+
+  api:
+    build: .
+    container_name: schedule-api
+    depends_on:
+      firefox:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/src/schedule_vvsu/logs
+      - ./src/schedule_vvsu/json:/app/src/schedule_vvsu/json
+    ports:
+      - "8000:8000"
+    networks:
+      - selenium_net
+    command: ["poetry", "run", "uvicorn", "schedule_vvsu.api:app", "--host", "0.0.0.0", "--port", "8000"]
 
 networks:
   selenium_net:
