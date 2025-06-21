@@ -1,0 +1,126 @@
+/* базовые переменные */
+:root {
+  --tp-bg-wrapper: radial-gradient(ellipse at top, #152c4a 0%, #0a101c 100%);
+  --tp-outline:   rgba(255, 255, 255, 0.07);
+
+  --tp-tab-bg-active:   #111E2F;
+  --tp-tab-bg-inactive: #08131F;
+  --tp-tab-text:        #9db1cf;
+  --tp-tab-text-active: #ffffff;
+
+  --tp-body-bg: #08121E;
+}
+
+/* обертка панели */
+.tab-wrapper {
+  width: 100%;
+  max-width: 480px;
+  margin: 2.2rem auto 0;
+  border: 1px solid var(--tp-outline);
+  border-radius: 22px;
+  background: var(--tp-bg-wrapper);
+  box-shadow: 0 8px 28px rgba(0,0,0,.50),
+              0 0 0 1px rgba(255,255,255,.04) inset;
+  overflow: hidden;
+  transition: max-width .3s ease;
+}
+
+.tab-wrapper:has(.logs-wrapper.full-width)  {
+  max-width: 1250px;
+}
+
+/* панель вкладок */
+.tab-bar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  background: #08131F;
+  border-radius: 22px 22px 0 0;
+}
+
+/* кнопка вкладки */
+.tab-btn {
+  flex: 1 1 0;
+  padding: 0.95rem 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--tp-tab-text);
+  background: var(--tp-tab-bg-inactive);
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: background .25s ease, color .25s ease;
+}
+
+.tab-btn:hover  { color: #d7e3ff; }
+.tab-btn:focus  { outline: none; }
+
+.tab-btn.active {
+  color: var(--tp-tab-text-active);
+  background: var(--tp-tab-bg-active);
+  box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.06),
+      inset 0 -1px 0 rgba(0,0,0,.40);
+}
+
+/* тело вкладки */
+.tab-body {
+  padding: 1.25rem 1rem 1.6rem;
+  background: var(--tp-body-bg);
+  overflow: visible;
+}
+
+/* если внутри находится .logs-wrapper.full-width — убираем боковые отступы */
+.tab-body:has(.logs-wrapper.full-width) {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* таблицы/контент */
+.tab-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.tab-body th,
+.tab-body td {
+  padding: .45rem .6rem;
+  text-align: left;
+  color: #e1eaf7;
+}
+
+.tab-body th {
+  font-weight: 600;
+  color: #ffffff;
+  background: rgba(255,255,255,.04);
+}
+
+.tab-body tr:not(:last-child) td {
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+
+/* пустое состояние */
+.tab-body .empty-state {
+  padding: 1.2rem 0;
+  text-align: center;
+  color: #6f7c96;
+  font-style: italic;
+}
+
+/* статус-точки */
+.status-done,
+.status-error,
+.status-pending {
+  display:inline-block;width:10px;height:10px;border-radius:50%;
+}
+.status-done    { background:#43e36b; }
+.status-error   { background:#ff4b4b; }
+.status-pending { background:#ffd600; }
+
+@media (max-width: 500px) {
+  .tab-wrapper { margin-top: 1.6rem; }
+  .tab-btn     { font-size: .88rem; }
+  .tab-body    { padding: 1.1rem .75rem 1.3rem; }
+}

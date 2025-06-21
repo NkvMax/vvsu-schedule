@@ -1,0 +1,45 @@
+.schedule-wrapper {
+  background: #08121e;
+  border-radius: 12px;
+  box-shadow:
+      0 0 0 1px rgba(255,255,255,.03) inset,
+      0 4px 14px rgba(0,0,0,.45);
+  padding: 1rem .9rem 1.2rem;
+  overflow-x: auto;
+
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.schedule-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .87rem;
+}
+
+.schedule-wrapper th:nth-child(2),
+.schedule-wrapper td:nth-child(2) {
+  min-width: 120px;
+  white-space: nowrap;
+}
+
+.schedule-wrapper th {
+  background: rgba(255,255,255,.06);
+  font-weight: 600;
+  color: #e7f1ff;
+}
+
+.schedule-wrapper tr:not(:last-child) td {
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+
+/* статус-точки */
+.status-dot {
+  display:inline-block;
+  width:9px; height:9px;
+  border-radius:50%;
+  margin-right:6px;
+}
+.status-ok    { background:#43e36b }
+.status-wait  { background:#ffd600 }
+.status-err   { background:#ff4b4b }

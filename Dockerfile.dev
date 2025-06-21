@@ -1,0 +1,29 @@
+FROM python:3.9-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH="/vvsu-schedule/src"
+
+WORKDIR /vvsu-schedule
+
+# Устанавливаем системные зависимости
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    gnupg \
+    unzip \
+    tzdata && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+ENV TZ=Asia/Vladivostok
+
+COPY pyproject.toml poetry.lock ./
+
+# Установка Poetry и зависимостей
+RUN pip install --no-cache-dir poetry==2.1.1
+RUN poetry config virtualenvs.create false
+RUN poetry install --no-root --no-interaction --no-ansi
+RUN poetry self add poetry-plugin-shell
+
+# Код монтируется извне (volume)
+CMD ["poetry", "run", "uvicorn", "schedule_vvsu.api:app", "--host", "0.0.0.0", "--port", "8000"]
