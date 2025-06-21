@@ -6,6 +6,9 @@ __pycache__/
 # Логи тестов и временные файлы
 .pytest_cache/
 *.log
+/src/logs/sync_log.log*
+error.html
+error.png
 
 # Poetry / Python env
 .venv/
@@ -30,3 +33,15 @@ dist/
 
 # PyCharm / IntelliJ
 .idea/
+/src/schedule_vvsu/json/excluded_lessons.json
+/src/schedule_vvsu/json/previous_schedule.json
+/src/schedule_vvsu/json/schedule.json
+/src/schedule_vvsu/json/credentials/service_account.json
+/src/schedule_vvsu/json/credentials/user_account.json
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Конфиденциальные файлы проекта
+.env

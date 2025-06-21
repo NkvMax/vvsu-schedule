@@ -1,0 +1,4 @@
+https://schedule.localhost {
+    reverse_proxy schedule-api:8000
+    tls internal
+}

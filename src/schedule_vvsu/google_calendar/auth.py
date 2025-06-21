@@ -5,7 +5,9 @@ from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-from schedule_vvsu.config import settings
+from schedule_vvsu.config import get_settings
+
+settings = get_settings()
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
@@ -48,6 +50,7 @@ def authenticate_service_account():
     Аутентификация через сервисный аккаунт.
     Использует SERVICE_ACCOUNT_FILE.
     """
+    print("LOOKING FOR service_account.json IN:", settings.SERVICE_ACCOUNT_FILE)
     creds = service_account.Credentials.from_service_account_file(
         str(SERVICE_ACCOUNT_FILE), scopes=SCOPES
     )

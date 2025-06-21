@@ -1,0 +1,241 @@
+/* Navbar */
+nav {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 2rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    opacity: 0;
+    transform: translateY(20px);
+}
+
+.page-wrapper {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 2rem 2rem 2rem;
+}
+
+
+.nav-list {
+    list-style: none;
+    display: flex;
+    gap: 2rem;
+    font-size: 1rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    padding: 0;
+    margin: 0;
+}
+
+.nav-list a {
+    text-decoration: none;
+    color: var(--text);
+    transition: color 0.3s ease;
+}
+
+.nav-list a:hover,
+.nav-list .active {
+    color: var(--accent);
+}
+
+/* layout.css */
+
+.about-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3rem;
+    max-width: 1000px;
+}
+
+.philosophy h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--accent);
+    margin-bottom: 1.25rem;
+}
+
+.philosophy h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+.philosophy p {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: var(--text);
+    max-width: 90%;
+}
+
+.timeline h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+.timeline-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    border-left: 2px solid rgba(255,255,255,0.1);
+    padding-left: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+}
+
+.timeline-list li {
+    position: relative;
+}
+
+.timeline-list li::before {
+    content: "";
+    position: absolute;
+    left: -1.35rem;
+    top: 0.4rem;
+    width: 0.7rem;
+    height: 0.7rem;
+    background-color: var(--accent);
+    border-radius: 50%;
+}
+
+.timeline-list .year {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+}
+
+.timeline-list .desc {
+    font-size: 0.95rem;
+    color: #ccc;
+    line-height: 1.5;
+}
+
+/* Contact Page */
+.contact-page {
+    max-width: 800px;
+    margin: 4rem auto;
+    padding: 0 2rem;
+    opacity: 0;
+    transform: translateY(30px);
+    transition: all 0.5s ease;
+}
+
+.contact-page h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--accent);
+    margin-bottom: 1rem;
+}
+
+.contact-page p {
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+    color: var(--text);
+}
+
+.contact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    font-size: 1rem;
+    line-height: 1.6;
+}
+
+.contact-list li {
+    display: flex;
+    flex-direction: column;
+}
+
+.contact-list a {
+    color: var(--accent);
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.content-wrapper {
+    max-width: 960px;
+    margin: 0 auto;
+    opacity: 0;
+    transform: translateY(40px);
+}
+
+
+/* Responsive */
+@media (max-width: 768px) {
+    .about-container {
+        grid-template-columns: 1fr;
+    }
+    .philosophy p {
+        max-width: 100%;
+    }
+
+    .contact-page {
+        padding: 2rem 1.5rem;
+    }
+
+    .contact-list li {
+        font-size: 0.95rem;
+    }
+}
+
+/* Contact Page Styling */
+.contact-page {
+    max-width: 400px;
+    margin: 6rem auto 4rem;
+    padding: 0 1.5rem;
+    text-align: center;
+    animation: fadeIn 0.8s ease;
+}
+
+.contact-page h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #B0BFD8;
+    margin-bottom: 0.75rem;
+}
+
+.contact-page .subtitle {
+    font-size: 1rem;
+    color: #A4A7AA;
+    margin-bottom: 2rem;
+}
+
+.contact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.contact-list li {
+    background-color: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #FEFEFD;
+    transition: background 0.3s ease;
+}
+
+.contact-list li:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.contact-icon {
+    width: 24px;
+    height: 24px;
+}
+
+.icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+}

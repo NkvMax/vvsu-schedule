@@ -1,8 +1,44 @@
-__pycache__
-*.pyc
+# Python-кеши и временные файлы
+__pycache__/
+*.py[cod]
 *.pyo
 *.pyd
 .Python
-venv
-.git
+
+# виртуальные окружения
+venv/
+.venv/
+ENV/
+env/
+
+# pytest caches
+.pytest_cache/
+
+# Git / IDE / OS
+.git/
 .gitignore
+.vscode/
+.idea/
+.DS_Store
+
+# Файлы окружения и секреты
+.env
+.env.*
+
+# Логи и временные данные проекта
+logs/
+*.log
+src/logs/
+src/logs/*
+
+# Фронтенд-артефакты
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env
+frontend/.env.*
+
+# Прочие артефакты сборки
+*.egg-info/
+build/
+dist/

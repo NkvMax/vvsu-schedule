@@ -2,7 +2,7 @@
 name = "schedule-vvsu"
 version = "0.1.0"
 description = "Проект для автоматической синхронизации расписания занятий с Google Calendar"
-authors = ["Maxim <nkvmaxim@gmail.com>"]
+authors = ["Maxim <m.nikolaev.contact@gmail.com>"]
 #readme = "README.md"
 
 # Пакет schedule_vvsu лежит в папке src/schedule_vvsu
@@ -69,9 +69,21 @@ urllib3 = "2.3.0"
 websocket-client = "1.8.0"
 wsproto = "1.2.0"
 webdriver-manager = "^4.0.2"
+sqlalchemy = "^2.0.41"
+uvicorn = "^0.34.2"
+python-multipart = "^0.0.20"
+psycopg2-binary = "^2.9.10"
+python-dateutil = "^2.9.0.post0"
+gunicorn = "^22.0"
+passlib = {version = ">=1.7.4", extras = ["bcrypt"]}
+python-jose = {extras = ["cryptography"], version = "^3.5.0"}
+bcrypt = "<4.3.0"
 
 [tool.poetry.scripts]
 vvsu-cli = "schedule_vvsu.cli.main:main"
+
+[tool.poetry.group.dev.dependencies]
+alembic = "^1.16.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

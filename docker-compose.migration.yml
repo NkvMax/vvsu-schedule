@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres-migration
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: schedule
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d schedule"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  migration:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: migration-runner
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/vvsu-schedule/src
+    volumes:
+      - .:/vvsu-schedule
+    working_dir: /vvsu-schedule
+    command: >
+      poetry run alembic revision --autogenerate -m "admins table"

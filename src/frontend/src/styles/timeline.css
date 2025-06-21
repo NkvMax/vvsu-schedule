@@ -1,0 +1,120 @@
+.logs-wrapper.timeline {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    margin-top: .6rem;
+    transition: max-width .3s, margin-top .3s
+}
+
+.logs-wrapper.timeline.full-width {
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100vw - 4rem);
+    max-width: 1024px;
+    margin-top: 1.25rem
+}
+
+.logs-panel.timeline {
+    width: 100%;
+    background: #08121e;
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .02) inset;
+    overflow: hidden;
+    transition: border-radius .25s
+}
+
+.logs-panel.timeline.expanded {
+    border-radius: 14px
+}
+
+.timeline-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .7rem 1rem;
+    background: #0d1725;
+    border-bottom: 1px solid rgba(255, 255, 255, .05)
+}
+
+.timeline-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff
+}
+
+.toggle-btn {
+    font-size: .85rem;
+    padding: .25rem .9rem;
+    border: 1px solid rgba(255, 255, 255, .15);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, .04);
+    color: #c7d4e9;
+    cursor: pointer;
+    transition: background .2s
+}
+
+.toggle-btn:hover {
+    background: rgba(255, 255, 255, .10)
+}
+
+.timeline-body {
+    padding: 1rem;
+    background: #000
+}
+
+.timeline-bar {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: .4rem .2rem
+}
+
+.day {
+    width: 18px;
+    height: 22px;
+    border-radius: 4px;
+    background: #4b4f58;
+    transition: filter .15s
+}
+
+.day-ok {
+    background: #5dd68b
+}
+
+.day-warn {
+    background: #ffbe66
+}
+
+.day-error {
+    background: #f56969
+}
+
+.day.today {
+    outline: 2px solid #ffffff22;
+    outline-offset: 2px
+}
+
+.day:hover {
+    filter: brightness(1.25);
+    cursor: pointer
+}
+
+.empty {
+    text-align: center;
+    color: #777;
+    margin-top: 1rem
+}
+
+@media (max-width: 600px) {
+    .logs-wrapper.timeline.full-width {
+        width: 100vw;
+        margin-top: .5rem
+    }
+
+    .day {
+        width: 16px;
+        height: 20px
+    }
+}

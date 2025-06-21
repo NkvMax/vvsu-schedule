@@ -1,156 +1,161 @@
 import typer
 import logging
-from logging.handlers import TimedRotatingFileHandler
-from pathlib import Path
-import subprocess, signal, os
+import subprocess
 from datetime import datetime
+from typing import Optional
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from schedule_vvsu.config import settings
+from schedule_vvsu.config import get_settings
 from schedule_vvsu.google_calendar.auth import authenticate_google_calendar
 from schedule_vvsu.google_calendar.calendar import list_calendars, remove_calendar, get_or_create_calendar
 from schedule_vvsu.google_calendar.sync import sync_schedule_to_calendar
-from schedule_vvsu.parser import parse_schedule, save_to_json
-from typing import Optional
+from schedule_vvsu.parser import parse_schedule
+from schedule_vvsu.database import init_db, save_lessons_to_db, Base, engine
+from schedule_vvsu.logs.logger_setup import setup_logging
+
+# Инициализация настроек
+settings = get_settings()
+
+# Создаем таблицы если не созданы
+Base.metadata.create_all(bind=engine)
 
 # Настройка логирования
-LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-
-log_handler = TimedRotatingFileHandler(
-    filename=LOG_DIR / "cli_actions.log",
-    when="midnight",
-    interval=1,
-    backupCount=7
-)
-log_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s:%(message)s"))
+setup_logging()
 logger = logging.getLogger("cli_logger")
-logger.setLevel(logging.INFO)
-logger.addHandler(log_handler)
 
-# Создаем Typer-приложение
+# Typer-приложение
 app = typer.Typer()
 
-# scheduler_process: Optional[subprocess.Popen] = None
-scheduler_process = None  # Глобальная переменная для хранения PID процесса
+# PID процесса планировщика
+scheduler_process: Optional[subprocess.Popen] = None
 
 
 @app.command()
 def list_all():
     """
-    Показывает все доступные календари (сервисного или пользовательского аккаунта,
-    в зависимости от ACCOUNT_TYPE в настройках).
+    Показывает все календари текущего аккаунта (user/service).
     """
-    logger.info("Запуск команды list_all() для вывода календарей")
+    logger.info("Команда list_all()")
     service = authenticate_google_calendar()
-    cals = list_calendars(service)
-    if not cals:
+    calendars = list_calendars(service)
+    if not calendars:
         typer.echo("Нет доступных календарей.")
         return
-    typer.echo("Список календарей:")
-    for cal in cals:
+    typer.echo("Календари:")
+    for cal in calendars:
         typer.echo(f" - {cal.get('summary')} (ID: {cal.get('id')})")
 
 
 @app.command()
 def rm(calendar_id: str):
     """
-    Удаляет календарь по заданному ID.
+    Удаляет календарь по его ID.
     """
-    logger.info(f"Запуск команды rm() для удаления календаря {calendar_id}")
+    logger.info(f"Команда rm() для ID: {calendar_id}")
     service = authenticate_google_calendar()
-    confirm = typer.confirm(f"Вы действительно хотите удалить календарь с ID: {calendar_id}?")
-    if confirm:
+    if typer.confirm(f"Удалить календарь с ID: {calendar_id}?"):
         remove_calendar(service, calendar_id)
-        typer.echo("Календарь удалeн.")
-        logger.info(f"Календарь {calendar_id} удалeн.")
+        typer.echo("Календарь удален.")
+        logger.info(f"Календарь с ID: {calendar_id} удален успешно")
     else:
         typer.echo("Операция отменена.")
-        logger.info("Удаление календаря отменено пользователем.")
+        logger.info("Операция удаления была отменена")
 
 
 @app.command()
 def start_scheduler():
     """
-    Запускает APScheduler (из src/scheduler.py) в отдельном процессе.
+    Запускает планировщик в отдельном процессе.
     """
-    logger.info("Команда start_scheduler()")
+    logger.info("Планировщик запустился")
     global scheduler_process
     if scheduler_process and scheduler_process.poll() is None:
-        typer.echo("Scheduler уже запущен.")
+        typer.echo("Планировщик уже запущен.")
         return
 
-    # Запускаем как отдельный процесс: "python -m src.scheduler"
     cmd = ["python", "-m", "schedule_vvsu.scheduler"]
     scheduler_process = subprocess.Popen(cmd)
-    typer.echo(f"Scheduler запущен, PID={scheduler_process.pid}")
-    logger.info(f"Scheduler запущен, PID={scheduler_process.pid}")
+    typer.echo(f"Планировщик запущен, PID={scheduler_process.pid}")
+    logger.info(f"Планировщик запущен, PID={scheduler_process.pid}")
 
 
 @app.command()
 def stop_scheduler():
     """
-    Останавливает APScheduler-процесс (если он запущен).
+    Останавливает планировщик (если запущен).
     """
-    logger.info("Команда stop_scheduler()")
+    logger.info("Планировщик был остановлен")
     global scheduler_process
     if not scheduler_process or scheduler_process.poll() is not None:
-        typer.echo("Scheduler уже остановлен.")
+        typer.echo("Планировщик уже остановлен.")
         return
 
     # Посылаем сигнал SIGTERM
     scheduler_process.terminate()
     scheduler_process.wait()
-    logger.info("Scheduler остановлен.")
-    typer.echo("Scheduler остановлен.")
+    typer.echo("Планировщик остановлен.")
+    logger.info("Планировщик остановлен")
 
 
 @app.command()
 def sync_now():
     """
-    Немедленно запускает синхронизацию расписания с Google Calendar.
+    Синхронизирует расписание с Google Календарем немедленно.
     """
     logger.info("Запуск немедленной синхронизации расписания.")
+    init_db()
     schedule = parse_schedule()
     if not schedule:
-        logger.error("Не удалось получить расписание.")
+        logger.error("Не удалось получить расписание с Google календаря.")
         return
 
-    save_to_json(schedule)
+    save_lessons_to_db(schedule)
+
     service = authenticate_google_calendar()
-    calendar_name = settings.CALENDAR_NAME  # Название календаря
-    calendar_id = get_or_create_calendar(service, calendar_name)
+    calendar_id = get_or_create_calendar(service, settings.CALENDAR_NAME)
     sync_schedule_to_calendar(service, schedule, calendar_id)
     logger.info("Синхронизация завершена успешно.")
-    print("Синхронизация завершена успешно.")
+    typer.echo("Синхронизация завершена.")
+
+
+@app.command()
+def migrate():
+    """
+    Применяет все доступные миграции Alembic.
+    """
+    logger.info("Выполнение миграций Alembic")
+    subprocess.run(["alembic", "upgrade", "head"], check=True)
+    logger.info("Миграции применены.")
 
 
 def job():
-    print(f"[{datetime.now()}] Запускается задача синхронизации.")
+    logger.info(f"[{datetime.now()}] Запуск задачи синхронизации.")
+    init_db()
     schedule = parse_schedule()
     if schedule:
-        save_to_json(schedule)
+        save_lessons_to_db(schedule)
         service = authenticate_google_calendar()
-        calendar_name = settings.CALENDAR_NAME
-        calendar_id = get_or_create_calendar(service, calendar_name)
+        calendar_id = get_or_create_calendar(service, settings.CALENDAR_NAME)
         sync_schedule_to_calendar(service, schedule, calendar_id)
-        print(f"[{datetime.now()}] Задача синхронизации завершена.")
+        logger.info(f"[{datetime.now()}] Задача синхронизации завершена.")
     else:
-        logging.error("Не удалось получить расписание.")
+        logging.warning("Не удалось получить расписание.")
 
 
 def main():
-    scheduler = BlockingScheduler()
+    init_db()
+    Base.metadata.create_all(bind=engine)
 
+    scheduler = BlockingScheduler()
     intervals = settings.PARSING_INTERVALS.split(",")
     for interval in intervals:
         hour, minute = map(int, interval.strip().split(":"))
         scheduler.add_job(job, 'cron', hour=hour, minute=minute)
-        print(f"Задача добавлена на запуск в {hour:02d}:{minute:02d}.")
+        logger.info(f"Задача добавлена на запуск в {hour:02d}:{minute:02d}.")
 
-    print("Планировщик запущен и ожидает задач.")
+    logger.info("Планировщик запущен и ожидает задач.")
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
-        print("Планировщик остановлен.")
+        logger.info("Планировщик остановлен.")
