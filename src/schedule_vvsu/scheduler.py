@@ -1,75 +1,127 @@
 import logging
-from logging.handlers import TimedRotatingFileHandler
-from pathlib import Path
-from dotenv import load_dotenv
 from apscheduler.schedulers.blocking import BlockingScheduler
-from datetime import datetime
+from dotenv import load_dotenv
+from typing import Optional
+from dateutil import tz
 
-from schedule_vvsu.config import settings
+from schedule_vvsu.config import get_settings
 from schedule_vvsu.google_calendar.auth import authenticate_google_calendar
 from schedule_vvsu.google_calendar.calendar import get_or_create_calendar
 from schedule_vvsu.google_calendar.sync import sync_schedule_to_calendar
-from schedule_vvsu.parser import parse_schedule, save_to_json
+from schedule_vvsu.parser import parse_schedule
+from schedule_vvsu.logs.logger_setup import setup_logging
+from datetime import datetime
+from schedule_vvsu.database import (
+    Base,
+    engine,
+    save_lessons_to_db,
+    init_db,
+    get_setting,
+    SessionLocal,
+)
+from schedule_vvsu.db.models import SchedulerStatus, ParseRun
 
-# Загружаем переменные из .env
 load_dotenv()
 
-# Настраиваем логирование с ротацией файлов
-BASE_DIR = Path(__file__).resolve().parent
-LOG_DIR = BASE_DIR / "logs"
-LOG_DIR.mkdir(exist_ok=True)
+# Инициализация логирования
+setup_logging()
+logger = logging.getLogger(__name__)
 
-log_handler = TimedRotatingFileHandler(
-    filename=LOG_DIR / "sync_log.log",
-    when="midnight",
-    interval=1,
-    backupCount=7
-)
-log_handler.setFormatter(
-    logging.Formatter("%(asctime)s %(levelname)s:%(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-)
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-logger.addHandler(log_handler)
+# Настройки
+settings = get_settings()
+VLADIVOSTOK_TZ = tz.gettz("Asia/Vladivostok")
+
+
+def record_scheduler_status(status: str):
+    session = SessionLocal()
+    try:
+        session.add(SchedulerStatus(status=status, updated_at=datetime.utcnow()))
+        session.commit()
+    finally:
+        session.close()
+
+
+def record_parse_run(status: str, detail: str = "", time_str: Optional[str] = None):
+    """Сохраняет результат очередного прогона парсера в parse_runs."""
+    now_local = datetime.now(tz=VLADIVOSTOK_TZ)
+
+    if time_str is None:
+        time_str = now_local.strftime("%H:%M")
+
+    session = SessionLocal()
+    try:
+        session.add(ParseRun(
+            time_str=time_str,
+            status=status,
+            detail=detail,
+            timestamp=now_local.replace(tzinfo=None)
+        ))
+        session.commit()
+        logger.info(f"Run записан: {status} @ {time_str} ({detail[:50]})")
+    finally:
+        session.close()
 
 
 def sync_task():
+    from dateutil import tz
+    tz_local = tz.gettz("Asia/Vladivostok")
+    now_local = datetime.now(tz_local)
+
     logger.info("Запуск задачи синхронизации расписания из личного кабинета.")
+    record_parse_run("started", "cron запуск", time_str=now_local.strftime("%H:%M"))
+
     try:
         schedule = parse_schedule()
         if not schedule:
-            logger.error("Не удалось получить расписание.")
+            msg = "Расписание не получено — возможно, недоступно"
+            logger.warning(msg)
+            record_parse_run("error", msg, time_str=now_local.strftime("%H:%M"))
             return
 
-        save_to_json(schedule)
+        save_lessons_to_db(schedule)
         service = authenticate_google_calendar()
-        calendar_name = settings.CALENDAR_NAME  # Название календаря в Google calendar
-        calendar_id = get_or_create_calendar(service, calendar_name)
+        calendar_id = get_or_create_calendar(service, settings.CALENDAR_NAME)
         sync_schedule_to_calendar(service, schedule, calendar_id)
-        logger.info("Синхронизация завершена успешно.")
+
+        ok_msg = f"Синхронизировано {len(schedule)} занятий"
+        logger.info(ok_msg)
+        record_parse_run("success", ok_msg, time_str=now_local.strftime("%H:%M"))
+
     except Exception as e:
-        logger.exception(f"Произошла непредвиденная ошибка: {e}")
+        err_msg = f"Ошибка: {e}"
+        logger.exception(err_msg)
+        record_parse_run("error", err_msg[:250], time_str=now_local.strftime("%H:%M"))
 
 
 def main():
-    if settings.DEV_MODE:
-        logger.info("DEV_MODE включен. Парсинг запускается принудительно.")
-        sync_task()
-    else:
-        # Если не в режиме разработки, используем APScheduler для планирования задач
-        logger.info("Приложение ожидает указанного временного интервала для запуска")
-        scheduler = BlockingScheduler(timezone=settings.TIMEZONE)
-        # Предполагаем, что PARSING_INTERVALS задана как "9:00,14:00,17:00"
-        intervals = [t.strip() for t in settings.PARSING_INTERVALS.split(",") if t.strip()]
-        for interval in intervals:
-            hour, minute = map(int, interval.split(":"))
-            scheduler.add_job(sync_task, 'cron', hour=hour, minute=minute, id=f"sync_{hour}_{minute}")
-            logger.info(f"Задача запланирована на {hour:02d}:{minute:02d}")
-        try:
-            logger.info("Запуск планировщика задач...")
-            scheduler.start()
-        except KeyboardInterrupt:
-            logger.info("Остановка планировщика задач.")
+    # Создание таблиц
+    init_db()
+    Base.metadata.create_all(bind=engine)
+
+    logger.info("Планировщик запускается согласно настройкам временных интервалов.")
+    record_scheduler_status("started")
+
+    scheduler = BlockingScheduler(timezone=settings.TIMEZONE)
+
+    interval_str = get_setting("PARSING_INTERVALS") or "09:00"
+    intervals = [t.strip() for t in interval_str.split(",") if t.strip()]
+
+    for interval in intervals:
+        hour, minute = map(int, interval.split(":"))
+        scheduler.add_job(
+            sync_task,
+            trigger="cron",
+            hour=hour,
+            minute=minute,
+            id=f"sync_{hour}_{minute}",
+        )
+        logger.info(f"Задача запланирована на {hour:02d}:{minute:02d}")
+
+    try:
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Планировщик остановлен.")
+        record_scheduler_status("stopped")
 
 
 if __name__ == "__main__":
