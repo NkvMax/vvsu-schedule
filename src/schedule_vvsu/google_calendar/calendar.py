@@ -1,11 +1,14 @@
 import logging
-from pathlib import Path
 from typing import Optional
-import os
-from schedule_vvsu.config import settings
+
+from schedule_vvsu.config import get_settings
+from schedule_vvsu.services.settings_service import get_user_mail_account
+
+settings = get_settings()
 
 
 def get_calendar_id(service, calendar_name: str) -> Optional[str]:
+    """Пытается найти календарь по названию и вернуть его ID."""
     page_token = None
     while True:
         calendar_list = service.calendarList().list(pageToken=page_token).execute()
@@ -21,24 +24,25 @@ def get_calendar_id(service, calendar_name: str) -> Optional[str]:
 
 
 def create_calendar(service, calendar_name: str) -> str:
+    """Создает новый календарь и настраивает ACL-доступ."""
     body = {
         'summary': calendar_name,
         'timeZone': settings.TIMEZONE,
-        'backgroundColor': '#668BE1',  # Cobalt
+        'backgroundColor': '#668BE1',
         'foregroundColor': '#ffffff'
     }
     created_calendar = service.calendars().insert(body=body).execute()
     calendar_id = created_calendar.get('id')
     logging.info(f"Создан календарь: {calendar_id}")
 
-    # Добавляем доступ для пользовательского аккаунта
+    # Предоставление доступа пользователю
     try:
         acl_rule = {
             "scope": {
                 "type": "user",
-                "value": settings.USER_MAIL_ACCOUNT
+                "value": get_user_mail_account()
             },
-            "role": "owner"  # Выдаем высокие привилегии
+            "role": "owner"
         }
         created_rule = service.acl().insert(calendarId=calendar_id, body=acl_rule).execute()
         logging.info(f"ACL правило создано: {created_rule}")
@@ -49,51 +53,47 @@ def create_calendar(service, calendar_name: str) -> str:
 
 
 def get_or_create_calendar(service, calendar_name: str) -> str:
+    """Получает ID календаря или создает новый, если не найден."""
     calendar_id = get_calendar_id(service, calendar_name)
-    if not calendar_id:
+    if calendar_id:
+        logging.info(f"Используем существующий календарь '{calendar_name}'.")
+        _ensure_user_access(service, calendar_id)
+    else:
         logging.info(f"Создаем новый календарь '{calendar_name}'.")
         calendar_id = create_calendar(service, calendar_name)
-        prev_sched_path = Path(__file__).resolve().parent.parent / "json" / "previous_schedule.json"
-        if prev_sched_path.exists():
-            prev_sched_path.unlink()
-            logging.info("Удален previous_schedule.json для нового календаря.")
-    else:
-        logging.info(f"Используем существующий календарь '{calendar_name}'.")
-
-        # Добавим здесь проверку предоставление доступа пользовательскому аккаунту, если его еще нет
-        try:
-            acl_list = service.acl().list(calendarId=calendar_id).execute()
-            user_emails = [rule['scope'].get('value') for rule in acl_list.get('items', []) if
-                           rule['scope']['type'] == 'user']
-            if settings.USER_MAIL_ACCOUNT not in user_emails:
-                acl_rule = {
-                    "scope": {
-                        "type": "user",
-                        "value": settings.USER_MAIL_ACCOUNT
-                    },
-                    "role": "owner"
-                    # максимальный уровень доступа для пользовательского аккаунта из .env (USER_MAIL_ACCOUNT)
-                }
-                service.acl().insert(calendarId=calendar_id, body=acl_rule).execute()
-                logging.info(f"Пользователю {settings.USER_MAIL_ACCOUNT} предоставлен доступ к календарю.")
-            else:
-                logging.info(f"Пользователь {settings.USER_MAIL_ACCOUNT} уже имеет доступ к календарю.")
-        except Exception as e:
-            logging.error(f"Ошибка при проверке или добавлении ACL: {e}")
-
     return calendar_id
 
 
+def _ensure_user_access(service, calendar_id: str):
+    """Проверяет наличие доступа у пользователя, добавляет при необходимости."""
+    try:
+        acl_list = service.acl().list(calendarId=calendar_id).execute()
+        user_emails = [
+            rule['scope'].get('value')
+            for rule in acl_list.get('items', [])
+            if rule['scope']['type'] == 'user'
+        ]
+        user_email = get_user_mail_account()
+        if user_email not in user_emails:
+            acl_rule = {
+                "scope": {"type": "user", "value": user_email},
+                "role": "owner"
+            }
+            service.acl().insert(calendarId=calendar_id, body=acl_rule).execute()
+            logging.info(f"Пользователю {user_email} предоставлен доступ к календарю.")
+        else:
+            logging.info(f"Пользователь {user_email} уже имеет доступ к календарю.")
+    except Exception as e:
+        logging.error(f"Ошибка при проверке или добавлении ACL: {e}")
+
+
 def list_calendars(service):
-    """
-    Возвращает список календарей, доступных аккаунту (сервисному или user-аккаунту).
-    """
+    """Возвращает список календарей, доступных аккаунту."""
     calendars = []
     page_token = None
     while True:
         cal_list = service.calendarList().list(pageToken=page_token).execute()
-        items = cal_list.get('items', [])
-        calendars.extend(items)
+        calendars.extend(cal_list.get('items', []))
         page_token = cal_list.get('nextPageToken')
         if not page_token:
             break
@@ -101,9 +101,7 @@ def list_calendars(service):
 
 
 def remove_calendar(service, calendar_id: str):
-    """
-    Удаляет календарь по ID (владение должно быть у сервисного аккаунта).
-    """
+    """Удаляет календарь по ID."""
     try:
         service.calendars().delete(calendarId=calendar_id).execute()
         logging.info(f"Календарь {calendar_id} удален.")
