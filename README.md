@@ -2,6 +2,38 @@
 
 Проект для автоматической синхронизации расписания занятий из личного кабинета ВВГУ с Google Calendar. Позволяет извлекать расписание с сайта ВВГУ и автоматически создавать или обновлять события в календаре.
 
+## Screenshots
+
+<details>
+<summary>Open gallery</summary>
+
+<p align="center">
+  <a href="docs/assets/home.jpg">
+    <img src="docs/assets/home.jpg" alt="Control center: status & actions" width="900" height="auto">
+  </a>
+  <br/><sub>Control center</sub>
+</p>
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="docs/assets/logs.jpg">
+        <img src="docs/assets/logs.jpg" alt="Live logs streaming in UI" width="550" height="auto">
+      </a>
+      <br/><sub>Live logs</sub>
+    </td>
+    <td align="center">
+      <a href="docs/assets/settings.jpg">
+        <img src="docs/assets/settings.jpg" alt="Bot & credentials settings" width="550" height="auto">
+      </a>
+      <br/><sub>Settings</sub>
+    </td>
+  </tr>
+</table>
+
+</details>
+
+
 ## Что нового в v1.0.0
 
 В этом релизе закрыт крупный этап развития проекта:
