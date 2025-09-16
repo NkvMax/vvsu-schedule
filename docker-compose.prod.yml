@@ -29,6 +29,8 @@ services:
       timeout: 5s
       retries: 5
     networks: [selenium_net]
+    ports:
+      - "127.0.0.1:5432:5432"
 
   # Selenium
   selenium:
@@ -87,8 +89,8 @@ services:
   # Telegram-бот
   schedule-bot:
     build:
-      context: ./src/tg_bot
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: src/tg_bot/Dockerfile
     image: vvsu-schedule-bot:1.0.0
     container_name: vvsu-schedule-bot
     env_file: .env
