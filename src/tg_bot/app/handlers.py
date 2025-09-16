@@ -1,20 +1,23 @@
-from aiogram import Router, F, types
-from aiogram.filters import Command, CommandStart
-from aiogram.types import (
-    Message,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    CallbackQuery,
-    BotCommand,
-    FSInputFile,
-)
-from pathlib import Path
-from .client import api_get, api_post
-from .settings import settings
 import asyncio
 import logging
 from datetime import datetime
+from pathlib import Path
+
 import pytz
+from aiogram import F, Router, types
+from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram.types import (
+    BotCommand,
+    CallbackQuery,
+    FSInputFile,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
+
+from .client import api_get, api_post
+from .settings import settings
+from .teachers_skill import teacher_timetable, teachers_overview
 
 router = Router()
 logger = logging.getLogger("handlers")
@@ -82,12 +85,16 @@ async def cmd_start(m: Message):
     await m.answer(
         f"{greeting}, {from_user.first_name}!\n\n"
         "Чтобы бот выглядел красиво, установите аватарку через команду /set_pic.\n",
-        reply_markup=kb_main()
+        reply_markup=kb_main(),
     )
 
-    await m.bot.set_my_commands([
-        types.BotCommand(command="set_pic", description="Получить аватарку для BotFather"),
-    ])
+    await m.bot.set_my_commands(
+        [
+            types.BotCommand(
+                command="set_pic", description="Получить аватарку для BotFather"
+            ),
+        ]
+    )
 
 
 @router.message(Command("status"))
@@ -175,3 +182,32 @@ async def cmd_set_pic(m: Message):
         "и отправьте ее в BotFather из галереи как фото.\n\n"
         "Важно: не пересылайте фото от бота — BotFather такое не принимает."
     )
+
+
+@router.message(Command("teachers"))
+async def cmd_teachers(msg: Message):
+    text = await teachers_overview()
+    await msg.answer(text)
+
+
+@router.message(Command("teacher"))
+async def cmd_teacher(message: Message, command: CommandObject):
+    q = (command.args or "").strip()
+    if not q:
+        await message.answer(
+            "Укажите фамилию/ФИО преподавателя: `/teacher ...`",
+            parse_mode="Markdown",
+        )
+        return
+    text = await teacher_timetable(q)
+    await message.answer(text)
+
+
+@router.message(F.text & ~F.text.regexp(r"^/"))
+async def free_text_teacher(message: Message):
+    q = message.text.strip()
+    # короткий мусор игнорируем
+    if len(q) < 3:
+        return
+    text = await teacher_timetable(q)
+    await message.answer(text)
