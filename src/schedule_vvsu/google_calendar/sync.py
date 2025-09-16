@@ -1,160 +1,264 @@
-import logging
-from datetime import datetime
-import pytz
-from collections import defaultdict
+from __future__ import annotations
 
-from schedule_vvsu.dto.models import Lesson
-from schedule_vvsu.database import load_lessons_from_db, save_lessons_to_db, SessionLocal
-from schedule_vvsu.db.models import ExcludedLesson
-from schedule_vvsu.google_calendar.events import create_event, generate_lesson_key
+import logging
+from collections import defaultdict
+from datetime import datetime
+from datetime import time as dtime
+
+import pytz
+
 from schedule_vvsu.config import get_settings
+from schedule_vvsu.database import (
+    SessionLocal,
+    load_lessons_from_db,
+    save_lessons_to_db,
+)
+from schedule_vvsu.db.models import ExcludedLesson
+from schedule_vvsu.dto.models import Lesson
+from schedule_vvsu.google_calendar.events import (
+    create_event,
+    generate_lesson_key,
+    update_event,
+)
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
-def filter_excluded_lessons(schedule: list[Lesson]) -> list[Lesson]:
-    """
-    Исключает занятия, подходящие под критерии ExcludedLesson из БД.
-    """
+def _is_past(lesson: Lesson) -> bool:
+    tz = pytz.timezone(settings.TIMEZONE)
+    start = lesson.get_start_end_times()[0]
+    if isinstance(start, str):
+        fmt = "%H:%M:%S" if start.count(":") == 2 else "%H:%M"
+        dt = datetime.strptime(f"{lesson.date} {start}", f"%d.%m.%Y {fmt}")
+    elif isinstance(start, dtime):
+        d = datetime.strptime(lesson.date, "%d.%m.%Y").date()
+        dt = datetime.combine(d, start)
+    else:
+        return False
+    return tz.localize(dt) < datetime.now(tz)
+
+
+def _find_event_by_key(service, calendar_id: str, key: str):
+    resp = (
+        service.events()
+        .list(
+            calendarId=calendar_id,
+            privateExtendedProperty=f"lesson_key={key}",
+            singleEvents=True,
+        )
+        .execute()
+    )
+    items = resp.get("items", [])
+    return items[0] if items else None
+
+
+def _find_event_by_time_and_title(service, calendar_id: str, lesson: Lesson):
+    """Fallback: ищем событие без ключа по окну времени и summary."""
+    tz = pytz.timezone(settings.TIMEZONE)
+    date = datetime.strptime(lesson.date, "%d.%m.%Y").date()
+    start_s, end_s = lesson.get_start_end_times()
+    if isinstance(start_s, dtime):
+        start_dt = datetime.combine(date, start_s)
+        end_dt = datetime.combine(date, end_s)
+    else:
+        fmt = "%H:%M:%S" if start_s.count(":") == 2 else "%H:%M"
+        start_dt = datetime.strptime(f"{lesson.date} {start_s}", f"%d.%m.%Y {fmt}")
+        end_dt = datetime.strptime(f"{lesson.date} {end_s}", f"%d.%m.%Y {fmt}")
+    start_iso = tz.localize(start_dt).isoformat()
+    end_iso = tz.localize(end_dt).isoformat()
+
+    expected_summary = (
+        f"{lesson.discipline.split(' вебинар:')[0].strip()} ({lesson.lesson_type})"
+    )
+    resp = (
+        service.events()
+        .list(
+            calendarId=calendar_id,
+            timeMin=start_iso,
+            timeMax=end_iso,
+            singleEvents=True,
+            orderBy="startTime",
+        )
+        .execute()
+    )
+    items = resp.get("items", [])
+    for e in items:
+        if e.get("summary") == expected_summary:
+            return e
+    return None
+
+
+def _filter_excluded(schedule: list[Lesson]) -> list[Lesson]:
     session = SessionLocal()
     try:
-        excluded = session.query(ExcludedLesson).all()
-        result = []
-        for lesson in schedule:
-            should_exclude = any(
-                ex.title == lesson.discipline and
-                (ex.teacher is None or ex.teacher == lesson.teacher) and
-                (ex.weekday is None or ex.weekday == lesson.weekday) and
-                (ex.start_time is None or ex.start_time == lesson.start_time)
-                for ex in excluded
+        ex = session.query(ExcludedLesson).all()
+        out = []
+        for l in schedule:
+            skip = any(
+                x.title == l.discipline
+                and (x.teacher is None or x.teacher == l.teacher)
+                and (x.weekday is None or x.weekday == l.weekday)
+                and (x.start_time is None or x.start_time == l.start_time)
+                for x in ex
             )
-            if not should_exclude:
-                result.append(lesson)
-        return result
+            if not skip:
+                out.append(l)
+        return out
     finally:
         session.close()
 
 
-def get_existing_event(service, calendar_id, lesson_key):
-    """Проверяет наличие события с уникальным ключом."""
-    events = service.events().list(
-        calendarId=calendar_id,
-        privateExtendedProperty=f"lesson_key={lesson_key}",
-        singleEvents=True
-    ).execute().get("items", [])
-    return events[0] if events else None
-
-
-def update_event(service, calendar_id, event, lesson):
-    """Обновляет существующее событие."""
-    event['summary'] = f"{lesson['discipline']} ({lesson['lesson_type']})"
-    event['location'] = lesson['auditorium']
-    event['description'] = f"Преподаватель: {lesson['teacher']}\nUpdate: {datetime.now().strftime('%m.%d в %H:%M')}"
-    service.events().update(calendarId=calendar_id, eventId=event['id'], body=event).execute()
-
-
-def is_past_event(lesson: Lesson) -> bool:
-    try:
-        start_time = lesson.get_start_end_times()[0]
-        lesson_datetime = datetime.strptime(f"{lesson.date} {start_time}", "%d.%m.%Y %H:%M")
-        lesson_datetime = pytz.timezone(settings.TIMEZONE).localize(lesson_datetime)
-        return lesson_datetime < datetime.now(pytz.timezone(settings.TIMEZONE))
-    except Exception as e:
-        logger.warning(f"Ошибка при проверке прошедшего события: {e}")
-        return False
-
-
 def sync_schedule_to_calendar(service, schedule: list[Lesson], calendar_id: str):
-    """
-    Синхронизирует занятия между расписанием и Google Calendar.
-    """
+    """Main sync entry — idempotent; always keeps webinar URL in description."""
+    # previous snapshot from DB
     try:
-        previous_schedule = load_lessons_from_db()
+        prev = load_lessons_from_db()
         logger.info("Загружено предыдущее расписание из БД.")
     except Exception as e:
-        previous_schedule = []
-        logger.warning(f"Ошибка загрузки предыдущего расписания: {e}")
+        logger.warning("Ошибка загрузки предыдущего расписания: %s", e)
+        prev = []
 
-    schedule = filter_excluded_lessons(schedule)
+    # 2) apply excludes
+    schedule = _filter_excluded(schedule)
 
-    # Генерация ключей
-    lesson_key = lambda lesson: generate_lesson_key(lesson.dict())
-    prev_keys = {lesson_key(lesson) for lesson in previous_schedule}
-    curr_keys = {lesson_key(lesson) for lesson in schedule}
-
-    added = [lesson for lesson in schedule if lesson_key(lesson) not in prev_keys]
-    removed = [lesson for lesson in previous_schedule if lesson_key(lesson) not in curr_keys]
+    # 3) compute keys
+    key_of = lambda l: generate_lesson_key(l.dict())
+    prev_keys = {key_of(l) for l in prev}
+    curr_keys = {key_of(l) for l in schedule}
+    added = [l for l in schedule if key_of(l) not in prev_keys]
+    removed = [l for l in prev if key_of(l) not in curr_keys]
     common_keys = prev_keys & curr_keys
 
-    logger.info(f"Добавлено занятий: {len(added)}")
-    logger.info(f"Удалено занятий: {len(removed)}")
+    logger.info("Добавлено занятий: %d", len(added))
+    logger.info("Удалено занятий: %d", len(removed))
 
-    # Сортировка и группировка для определения первых занятий
-    sorted_schedule = sorted(schedule, key=lambda l: (l.get_date(), l.get_start_end_times()[0]))
-    grouped = defaultdict(list)
-    for lesson in sorted_schedule:
-        grouped[lesson.get_date()].append(lesson)
-    first_lessons = {day: lessons[0] for day, lessons in grouped.items()}
+    # 4) first lesson per day
+    sorted_sched = sorted(
+        schedule, key=lambda l: (l.get_date(), l.get_start_end_times()[0])
+    )
+    first_of_day = {}
+    for l in sorted_sched:
+        first_of_day.setdefault(l.get_date(), l)
 
-    # Добавление и обновление событий
+    # 5) process added (adopt existing without key)
     for lesson in added:
-        is_first = lesson == first_lessons.get(lesson.get_date())
-        key = lesson_key(lesson)
-        event_body = create_event(lesson.dict(), is_first_of_day=is_first)
-
+        key = key_of(lesson)
+        is_first = lesson == first_of_day.get(lesson.get_date())
         try:
-            existing = get_existing_event(service, calendar_id, key)
-            if existing:
-                logger.info(f"Обновление события для {lesson.discipline}")
-                update_event(service, calendar_id, existing, lesson)
+            ev = _find_event_by_key(service, calendar_id, key)
+            if not ev:
+                ev = _find_event_by_time_and_title(service, calendar_id, lesson)
+            if ev:
+                # adopt + update (ensures description with link)
+                ev.setdefault("extendedProperties", {}).setdefault("private", {})[
+                    "lesson_key"
+                ] = key
+                update_event(service, calendar_id, ev, lesson, lesson_key=key)
+                logger.info("Обновлено событие (усыновлено): %s", ev.get("summary"))
             else:
-                event = service.events().insert(calendarId=calendar_id, body=event_body).execute()
-                logger.info(f"Добавлено событие: {event.get('summary')} ({event.get('start')['dateTime']})")
+                body = create_event(
+                    lesson.dict(), is_first_of_day=is_first, lesson_key=key
+                )
+                created = (
+                    service.events().insert(calendarId=calendar_id, body=body).execute()
+                )
+                logger.info(
+                    "Добавлено событие: %s (%s)",
+                    created.get("summary"),
+                    created["start"]["dateTime"],
+                )
         except Exception as e:
-            logger.error(f"Ошибка при добавлении/обновлении события: {e}")
+            logger.error("Ошибка при добавлении/обновлении события: %s", e)
 
-    # Удаление только будущих событий
+    # 6) delete future removed
     for lesson in removed:
-        if is_past_event(lesson):
-            logger.info(f"Пропущено удаление прошедшего события: {lesson.discipline} {lesson.date}")
+        if _is_past(lesson):
+            logger.info(
+                "Пропущено удаление прошедшего события: %s %s",
+                lesson.discipline,
+                lesson.date,
+            )
             continue
-
-        key = lesson_key(lesson)
+        key = key_of(lesson)
         try:
-            events = service.events().list(
-                calendarId=calendar_id,
-                privateExtendedProperty=f"lesson_key={key}",
-                singleEvents=True
-            ).execute().get("items", [])
-            for ev in events:
-                service.events().delete(calendarId=calendar_id, eventId=ev["id"]).execute()
-                logger.info(f"Удалено событие: {ev.get('summary')}")
+            resp = (
+                service.events()
+                .list(
+                    calendarId=calendar_id,
+                    privateExtendedProperty=f"lesson_key={key}",
+                    singleEvents=True,
+                )
+                .execute()
+            )
+            for ev in resp.get("items", []):
+                service.events().delete(
+                    calendarId=calendar_id, eventId=ev["id"]
+                ).execute()
+                logger.info("Удалено событие: %s", ev.get("summary"))
         except Exception as e:
-            logger.error(f"Ошибка при удалении события: {e}")
+            logger.error("Ошибка при удалении события: %s", e)
 
-    # Обновление описаний общих событий
+    # 7) update common (always rewrite description to (possibly) add URL)
     tz = pytz.timezone(settings.TIMEZONE)
     update_time = datetime.now(tz).strftime("%m.%d в %H:%M")
     for lesson in schedule:
-        key = lesson_key(lesson)
-        if key in common_keys:
-            try:
-                events = service.events().list(
+        key = key_of(lesson)
+        if key not in common_keys:
+            continue
+        try:
+            resp = (
+                service.events()
+                .list(
                     calendarId=calendar_id,
                     privateExtendedProperty=f"lesson_key={key}",
-                    singleEvents=True
-                ).execute().get("items", [])
-                for ev in events:
-                    ev["description"] = f"Преподаватель: {lesson.teacher}\nUpdate: {update_time}"
-                    updated = service.events().update(calendarId=calendar_id, eventId=ev["id"], body=ev).execute()
-                    logger.info(f"Обновлено событие: {updated.get('summary')} - Update: {update_time}")
-            except Exception as e:
-                logger.error(f"Ошибка при обновлении описания события: {e}")
+                    singleEvents=True,
+                )
+                .execute()
+            )
+            items = resp.get("items", [])
+            if not items:
+                # try to find by time+title
+                ev = _find_event_by_time_and_title(service, calendar_id, lesson)
+                if ev:
+                    ev.setdefault("extendedProperties", {}).setdefault("private", {})[
+                        "lesson_key"
+                    ] = key
+                    update_event(service, calendar_id, ev, lesson, lesson_key=key)
+                    logger.info(
+                        "Обновлено событие (добавлен ключ): %s - Update: %s",
+                        ev.get("summary"),
+                        update_time,
+                    )
+                else:
+                    is_first = lesson == first_of_day.get(lesson.get_date())
+                    body = create_event(
+                        lesson.dict(), is_first_of_day=is_first, lesson_key=key
+                    )
+                    created = (
+                        service.events()
+                        .insert(calendarId=calendar_id, body=body)
+                        .execute()
+                    )
+                    logger.info(
+                        "Воссоздано событие: %s (%s)",
+                        created.get("summary"),
+                        created["start"]["dateTime"],
+                    )
+            else:
+                for ev in items:
+                    update_event(service, calendar_id, ev, lesson, lesson_key=key)
+                    logger.info(
+                        "Обновлено событие: %s - Update: %s",
+                        ev.get("summary"),
+                        update_time,
+                    )
+        except Exception as e:
+            logger.error("Ошибка при обновлении/воссоздании события: %s", e)
 
-    # Сохраняем текущее расписание
+    # 8) persist
     try:
         save_lessons_to_db(schedule)
         logger.info("Текущее расписание сохранено в базу данных.")
     except Exception as e:
-        logger.error(f"Ошибка при сохранении расписания: {e}")
+        logger.error("Ошибка при сохранении расписания: %s", e)
