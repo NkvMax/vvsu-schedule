@@ -20,7 +20,7 @@ from schedule_vvsu.google_calendar.sync import sync_schedule_to_calendar
 from schedule_vvsu.db.models import LogEntry, Setting
 from schedule_vvsu.logs.logger_setup import setup_logging
 from schedule_vvsu.db.models import SchedulerStatus, ParseRun
-from schedule_vvsu.services.settings_service import get_parsing_intervals
+from schedule_vvsu.services.settings_service import get_parsing_intervals, get_calendar_name
 from schedule_vvsu.scheduler import record_parse_run
 from sqlalchemy import desc
 from schedule_vvsu.auth import router as auth_router
@@ -185,7 +185,8 @@ async def sync_now():
             # сохраняем в БД и Google Calendar
             save_lessons_to_db(schedule)
             service = authenticate_google_calendar()
-            calendar_id = get_or_create_calendar(service, settings.CALENDAR_NAME)
+            # calendar_id = get_or_create_calendar(service, settings.CALENDAR_NAME)
+            calendar_id = get_or_create_calendar(service, get_calendar_name())
             sync_schedule_to_calendar(service, schedule, calendar_id)
 
             # финальная запись об успехе
