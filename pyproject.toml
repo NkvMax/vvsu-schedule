@@ -7,7 +7,8 @@ authors = ["Maxim <m.nikolaev.contact@gmail.com>"]
 
 # Пакет schedule_vvsu лежит в папке src/schedule_vvsu
 packages = [
-    { include = "schedule_vvsu", from = "src" }
+    { include = "schedule_vvsu", from = "src" },
+    { include = "tg_bot", from = "src" }
 ]
 
 [tool.poetry.dependencies]
@@ -78,6 +79,8 @@ gunicorn = "^22.0"
 passlib = {version = ">=1.7.4", extras = ["bcrypt"]}
 python-jose = {extras = ["cryptography"], version = "^3.5.0"}
 bcrypt = "<4.3.0"
+thefuzz = "^0.22.1"
+python-levenshtein = "^0.27.1"
 
 [tool.poetry.scripts]
 vvsu-cli = "schedule_vvsu.cli.main:main"
