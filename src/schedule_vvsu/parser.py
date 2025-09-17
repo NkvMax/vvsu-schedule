@@ -43,7 +43,7 @@ def get_config():
 
 def get_webdriver(use_remote: bool, remote_url: str) -> webdriver.Firefox:
     options = FirefoxOptions()
-    options.add_argument("--headless")
+    options.headless = True
     options.add_argument("--width=1280")
     options.add_argument("--height=720")
     options.set_preference("permissions.default.image", 2)
@@ -91,7 +91,7 @@ def _normalize_url(raw: str) -> Optional[str]:
         return None
     if href.startswith("http://") or href.startswith("https://"):
         return href
-    # «Голая» ссылка без схемы
+    # "Голая" ссылка без схемы
     if "." in href:
         return "https://" + href.lstrip("/")
     return None
