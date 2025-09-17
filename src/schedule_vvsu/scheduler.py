@@ -1,25 +1,27 @@
 import logging
-from apscheduler.schedulers.blocking import BlockingScheduler
-from dotenv import load_dotenv
+from datetime import datetime
 from typing import Optional
+
+from apscheduler.schedulers.blocking import BlockingScheduler
 from dateutil import tz
+from dotenv import load_dotenv
 
 from schedule_vvsu.config import get_settings
+from schedule_vvsu.database import (
+    Base,
+    SessionLocal,
+    engine,
+    get_setting,
+    init_db,
+    save_lessons_to_db,
+)
+from schedule_vvsu.db.models import ParseRun, SchedulerStatus
 from schedule_vvsu.google_calendar.auth import authenticate_google_calendar
 from schedule_vvsu.google_calendar.calendar import get_or_create_calendar
 from schedule_vvsu.google_calendar.sync import sync_schedule_to_calendar
-from schedule_vvsu.parser import parse_schedule
 from schedule_vvsu.logs.logger_setup import setup_logging
-from datetime import datetime
-from schedule_vvsu.database import (
-    Base,
-    engine,
-    save_lessons_to_db,
-    init_db,
-    get_setting,
-    SessionLocal,
-)
-from schedule_vvsu.db.models import SchedulerStatus, ParseRun
+from schedule_vvsu.parser import parse_schedule
+from schedule_vvsu.services.settings_service import get_calendar_name
 
 load_dotenv()
 
@@ -50,12 +52,14 @@ def record_parse_run(status: str, detail: str = "", time_str: Optional[str] = No
 
     session = SessionLocal()
     try:
-        session.add(ParseRun(
-            time_str=time_str,
-            status=status,
-            detail=detail,
-            timestamp=now_local.replace(tzinfo=None)
-        ))
+        session.add(
+            ParseRun(
+                time_str=time_str,
+                status=status,
+                detail=detail,
+                timestamp=now_local.replace(tzinfo=None),
+            )
+        )
         session.commit()
         logger.info(f"Run записан: {status} @ {time_str} ({detail[:50]})")
     finally:
@@ -64,6 +68,7 @@ def record_parse_run(status: str, detail: str = "", time_str: Optional[str] = No
 
 def sync_task():
     from dateutil import tz
+
     tz_local = tz.gettz("Asia/Vladivostok")
     now_local = datetime.now(tz_local)
 
@@ -71,21 +76,25 @@ def sync_task():
     record_parse_run("started", "cron запуск", time_str=now_local.strftime("%H:%M"))
 
     try:
-        schedule = parse_schedule()
-        if not schedule:
-            msg = "Расписание не получено — возможно, недоступно"
-            logger.warning(msg)
-            record_parse_run("error", msg, time_str=now_local.strftime("%H:%M"))
-            return
+        # Создаем сессию базы данных
+        with SessionLocal() as db:
+            schedule = parse_schedule()
+            if not schedule:
+                msg = "Расписание не получено — возможно, недоступно"
+                logger.warning(msg)
+                record_parse_run("error", msg, time_str=now_local.strftime("%H:%M"))
+                return
 
-        save_lessons_to_db(schedule)
-        service = authenticate_google_calendar()
-        calendar_id = get_or_create_calendar(service, settings.CALENDAR_NAME)
-        sync_schedule_to_calendar(service, schedule, calendar_id)
+            save_lessons_to_db(schedule)
+            service = authenticate_google_calendar()
+            calendar_id = get_or_create_calendar(
+                service, get_calendar_name(db)
+            )  # Используем get_calendar_name
+            sync_schedule_to_calendar(service, schedule, calendar_id)
 
-        ok_msg = f"Синхронизировано {len(schedule)} занятий"
-        logger.info(ok_msg)
-        record_parse_run("success", ok_msg, time_str=now_local.strftime("%H:%M"))
+            ok_msg = f"Синхронизировано {len(schedule)} занятий"
+            logger.info(ok_msg)
+            record_parse_run("success", ok_msg, time_str=now_local.strftime("%H:%M"))
 
     except Exception as e:
         err_msg = f"Ошибка: {e}"
