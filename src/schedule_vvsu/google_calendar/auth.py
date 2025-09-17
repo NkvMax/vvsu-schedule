@@ -1,15 +1,17 @@
-import os
 import logging
+import os
 from pathlib import Path
-from google.oauth2.credentials import Credentials
-from google.oauth2 import service_account
-from google_auth_oauthlib.flow import InstalledAppFlow
+
 from google.auth.transport.requests import Request
+from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+
 from schedule_vvsu.config import get_settings
 
 settings = get_settings()
 
-SCOPES = ['https://www.googleapis.com/auth/calendar']
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 # Преобразуем пути из настроек в объекты Path
 USER_CREDENTIALS_FILE = Path(settings.USER_CREDENTIALS_FILE)
@@ -32,11 +34,15 @@ def authenticate_user_account():
                 logging.info("Токен обновлен через refresh_token.")
             except Exception as e:
                 logging.error(f"Ошибка при обновлении токена: {e}")
-                flow = InstalledAppFlow.from_client_secrets_file(str(USER_CREDENTIALS_FILE), SCOPES)
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    str(USER_CREDENTIALS_FILE), SCOPES
+                )
                 creds = flow.run_local_server(port=0)
                 logging.info("Токен получен (повторная полная аутентификация).")
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(USER_CREDENTIALS_FILE), SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(USER_CREDENTIALS_FILE), SCOPES
+            )
             creds = flow.run_local_server(port=0)
             logging.info("Токен получен (полная аутентификация).")
         with USER_TOKEN_FILE.open("w") as token:
@@ -57,9 +63,10 @@ def authenticate_service_account():
     return creds
 
 
-def authenticate_google_calendar():
+def authenticate_google_calendar(return_creds: bool = False):
     """
     Фабричный метод для выбора метода аутентификации в зависимости от настроек.
+    Если return_creds=True, возвращает (service, creds) для GCSA.
     """
     if settings.ACCOUNT_TYPE == "service_account":
         logging.info("Используется сервисный аккаунт.")
@@ -70,5 +77,8 @@ def authenticate_google_calendar():
     else:
         raise ValueError("Неверный тип аккаунта в настройках (ACCOUNT_TYPE).")
     from googleapiclient.discovery import build
-    service = build('calendar', 'v3', credentials=creds)
+
+    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+    if return_creds:
+        return service, creds
     return service
