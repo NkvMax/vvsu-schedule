@@ -1,10 +1,11 @@
 import logging
+from contextlib import contextmanager
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from schedule_vvsu.config import get_settings
-from schedule_vvsu.database import get_db
+from schedule_vvsu.database import SessionLocal, get_db
 from schedule_vvsu.services.settings_service import get_user_mail_account
 
 settings = get_settings()
@@ -73,6 +74,8 @@ def get_or_create_calendar(service, calendar_name: str, db: Session = None) -> s
 
 def _ensure_user_access(service, calendar_id: str, db: Session = None):
     """Проверяет наличие доступа у пользователя, добавляет при необходимости."""
+    # Создаем сессию, если db не передан
+    session = db if db is not None else SessionLocal()
     try:
         acl_list = service.acl().list(calendarId=calendar_id).execute()
         user_emails = [
@@ -80,7 +83,7 @@ def _ensure_user_access(service, calendar_id: str, db: Session = None):
             for rule in acl_list.get("items", [])
             if rule["scope"]["type"] == "user"
         ]
-        user_email = get_user_mail_account(db)  # Передаем db
+        user_email = get_user_mail_account(session)  # Используем session
         if user_email not in user_emails:
             acl_rule = {"scope": {"type": "user", "value": user_email}, "role": "owner"}
             service.acl().insert(calendarId=calendar_id, body=acl_rule).execute()
@@ -89,6 +92,11 @@ def _ensure_user_access(service, calendar_id: str, db: Session = None):
             logging.info(f"Пользователь {user_email} уже имеет доступ к календарю.")
     except Exception as e:
         logging.error(f"Ошибка при проверке или добавлении ACL: {e}")
+    finally:
+        if (
+            db is None and session is not None
+        ):  # Закрываем сессию, если она была создана здесь
+            session.close()
 
 
 def list_calendars(service):
