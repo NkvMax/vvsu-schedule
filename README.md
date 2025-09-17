@@ -88,7 +88,7 @@ cp .env.example .env
 Запустите приложение:
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+make up
 ```
 
 Для доступа к Web-интерфейсу через SSH-туннель:
