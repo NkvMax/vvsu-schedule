@@ -1,9 +1,9 @@
+version: "3.9"
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: postgres
-    env_file:
-      - .env
+    container_name: vvsu-postgres
+    env_file: [.env]
     environment:
       POSTGRES_DB: schedule
       POSTGRES_USER: ${POSTGRES_USER}
@@ -12,124 +12,118 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-    networks:
-      - selenium_net
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U maxim -d schedule" ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d schedule"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks: [selenium_net]
 
-  firefox:
+  selenium:
     image: selenium/standalone-firefox:137.0.1
-    container_name: firefox
-    shm_size: 2gb
-    ports:
-      - "4444:4444"
-    networks:
-      - selenium_net
+    container_name: vvsu-selenium
+    shm_size: 2g
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4444/wd/hub/status"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+    ports:
+      - "4444:4444"
+    networks: [selenium_net]
+
+  # FastAPI + hot reload
+  schedule-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: schedule-api
+    working_dir: /vvsu-schedule/src
+    command: >
+      poetry run uvicorn schedule_vvsu.api:app
+      --host 0.0.0.0 --port 8000
+      --reload --reload-dir /vvsu-schedule/src
+    env_file: [.env]
+    environment:
+      - PYTHONPATH=/vvsu-schedule/src
+      - TZ=Asia/Vladivostok
+    depends_on:
+      selenium:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./src:/vvsu-schedule/src
+      - ./logs:/vvsu-schedule/logs
+      - ./.env:/vvsu-schedule/.env
+      - ./src/schedule_vvsu/json/credentials:/vvsu-schedule/src/schedule_vvsu/json/credentials
+      - .:/vvsu-schedule
+    networks: [selenium_net]
+    expose: ["8000"]
 
   schedule-sync:
     build:
       context: .
       dockerfile: Dockerfile.dev
     container_name: schedule-sync
-
-    depends_on:
-      postgres:
-        condition: service_healthy
-      firefox:
-        condition: service_healthy
-
-    env_file:
-      - .env
-
     working_dir: /vvsu-schedule
+    command: >
+      /bin/bash -lc
+      "poetry run alembic upgrade head &&
+       poetry run watchfiles --ignore-path logs 'python -m schedule_vvsu.scheduler'"
+    env_file: [.env]
     environment:
       - PYTHONPATH=/vvsu-schedule/src
       - TZ=Asia/Vladivostok
-
+    depends_on:
+      selenium:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     volumes:
       - ./src:/vvsu-schedule/src
-      - ./src/db:/vvsu-schedule/src/db
       - ./logs:/vvsu-schedule/logs
-      - .:/vvsu-schedule
       - ./.env:/vvsu-schedule/.env
       - ./src/schedule_vvsu/json/credentials:/vvsu-schedule/src/schedule_vvsu/json/credentials
+      - .:/vvsu-schedule
+    networks: [selenium_net]
 
-    networks:
-      - selenium_net
-
-    command: >
-      /bin/bash -c "
-        poetry run alembic upgrade head &&
-        poetry run python -m schedule_vvsu.scheduler
-      "
-
-
-  api:
+  schedule-bot:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    container_name: schedule-api
-    depends_on:
-      postgres:
-        condition: service_healthy
-      firefox:
-        condition: service_healthy
-    env_file:
-      - .env
+    container_name: schedule-bot
+    working_dir: /vvsu-schedule/src
+    command: poetry run python -m schedule_vvsu.bot
+    env_file: [.env]
     environment:
       - PYTHONPATH=/vvsu-schedule/src
       - TZ=Asia/Vladivostok
+    depends_on:
+      selenium:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     volumes:
       - ./src:/vvsu-schedule/src
       - ./logs:/vvsu-schedule/logs
       - ./.env:/vvsu-schedule/.env
-      - .:/vvsu-schedule
       - ./src/schedule_vvsu/json/credentials:/vvsu-schedule/src/schedule_vvsu/json/credentials
-    working_dir: /vvsu-schedule/src
-    networks:
-      - selenium_net
-    command: ["poetry", "run", "uvicorn", "schedule_vvsu.api:app", "--host", "0.0.0.0", "--port", "8000"]
-
-  bot:
-    build:
-      context: ./src/tg_bot
-      dockerfile: Dockerfile
-    command: poetry run python -m app.bot
-    working_dir: /app
-    volumes:
-      - ./src/tg_bot:/app
-    env_file:
-      - .env
-    depends_on:
-      - api
-      - postgres
-    networks:
-      - selenium_net
-
+      - .:/vvsu-schedule
+    networks: [selenium_net]
 
   caddy:
     image: caddy:2
-    container_name: caddy
+    container_name: vvsu-caddy
+    depends_on: [schedule-api]
     ports:
-      - "443:443"
       - "80:80"
+      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      - api
-    networks:
-      - selenium_net
+    networks: [selenium_net]
 
 volumes:
   pgdata:
