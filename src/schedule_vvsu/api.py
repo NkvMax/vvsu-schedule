@@ -208,7 +208,9 @@ async def sync_now():
                 # сохраняем в БД и Google Calendar
                 save_lessons_to_db(schedule)
                 service = authenticate_google_calendar()
-                calendar_id = get_or_create_calendar(service, get_calendar_name(db))
+                calendar_id = get_or_create_calendar(
+                    service, get_calendar_name(db), db
+                )  # Передаем db
                 sync_schedule_to_calendar(service, schedule, calendar_id)
 
                 # финальная запись об успехе
