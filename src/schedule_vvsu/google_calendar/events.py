@@ -78,6 +78,18 @@ def _parse_dt_local(date_str: str, hhmm: str) -> str:
     return tz.localize(dt).isoformat()
 
 
+def _reminders_payload(is_first_of_day: bool) -> Dict[str, Any]:
+    """Формирует блок reminders для события."""
+    if is_first_of_day:
+        overrides = [
+            {"method": "popup", "minutes": 60},
+            {"method": "popup", "minutes": 10},
+        ]
+    else:
+        overrides = [{"method": "popup", "minutes": 10}]
+    return {"useDefault": False, "overrides": overrides}
+
+
 def create_event(
     lesson: Dict[str, Any],
     is_first_of_day: bool = False,
@@ -85,6 +97,8 @@ def create_event(
 ) -> Dict[str, Any]:
     """
     Build event body for Calendar API insert().
+    - Для первой пары дня: напоминания за 60 и за 10 минут.
+    - Для остальных пар: напоминание за 10 минут.
     """
     date = lesson["date"]
     start_s, end_s = (lesson.get("time_range") or "").split("-")
@@ -117,9 +131,8 @@ def create_event(
         # скрыть "кто создал" увы нельзя через API — это системное поле Google
         "guestsCanInviteOthers": False,
         "guestsCanSeeOtherGuests": False,
+        "reminders": _reminders_payload(is_first_of_day),
     }
-    if is_first_of_day:
-        body["reminders"] = {"useDefault": False, "overrides": []}
     return body
 
 
