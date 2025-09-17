@@ -1,37 +1,44 @@
+import logging
+import os
+import signal
+import subprocess
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from fastapi import FastAPI, Form, UploadFile, File, APIRouter, Depends, Response
+from signal import SIGTERM
+from threading import Thread
+from typing import Dict, Optional
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Response,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-import subprocess
-import signal
-import os
-from typing import Optional, Dict
-from signal import SIGTERM
-import logging
-from threading import Thread
+from pydantic import BaseModel
+from sqlalchemy import desc, func, text
+from sqlalchemy.orm import Session
 
+from schedule_vvsu.auth import router as auth_router
 from schedule_vvsu.config import get_settings
-from schedule_vvsu.parser import parse_schedule
-from schedule_vvsu.database import save_lessons_to_db, init_db, SessionLocal
+from schedule_vvsu.database import SessionLocal, get_db, init_db, save_lessons_to_db
+from schedule_vvsu.db.models import LogEntry, ParseRun, SchedulerStatus, Setting
 from schedule_vvsu.google_calendar.auth import authenticate_google_calendar
 from schedule_vvsu.google_calendar.calendar import get_or_create_calendar
 from schedule_vvsu.google_calendar.sync import sync_schedule_to_calendar
-from schedule_vvsu.db.models import LogEntry, Setting
 from schedule_vvsu.logs.logger_setup import setup_logging
-from schedule_vvsu.db.models import SchedulerStatus, ParseRun
-from schedule_vvsu.services.settings_service import get_parsing_intervals, get_calendar_name
+from schedule_vvsu.parser import parse_schedule
 from schedule_vvsu.scheduler import record_parse_run
-from sqlalchemy import desc
-from schedule_vvsu.auth import router as auth_router
-from datetime import datetime, timedelta, date
-from sqlalchemy import func
-
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-from schedule_vvsu.database import get_db
+from schedule_vvsu.services.settings_service import (
+    get_calendar_name,
+    get_parsing_intervals,
+)
 
 settings = get_settings()
 setup_logging()
@@ -96,9 +103,20 @@ async def config_status():
 async def get_sql_logs(after_id: int = 0):
     session = SessionLocal()
     try:
-        entries = session.query(LogEntry).filter(LogEntry.id > after_id).order_by(LogEntry.id).limit(100).all()
+        entries = (
+            session.query(LogEntry)
+            .filter(LogEntry.id > after_id)
+            .order_by(LogEntry.id)
+            .limit(100)
+            .all()
+        )
         return [
-            {"id": e.id, "ts": e.timestamp.isoformat(), "level": e.level, "msg": e.message}
+            {
+                "id": e.id,
+                "ts": e.timestamp.isoformat(),
+                "level": e.level,
+                "msg": e.message,
+            }
             for e in entries
         ]
     finally:
@@ -119,12 +137,12 @@ async def get_account():
 # Обновление / установка настроек
 @api_router.post("/account")
 async def update_account(
-        username: str = Form(...),
-        password: str = Form(...),
-        user_mail_account: str = Form(...),
-        parsing_intervals: str = Form(...),
-        calendar_name: str = Form(...),
-        file: UploadFile = File(None)
+    username: str = Form(...),
+    password: str = Form(...),
+    user_mail_account: str = Form(...),
+    parsing_intervals: str = Form(...),
+    calendar_name: str = Form(...),
+    file: UploadFile = File(None),
 ):
     session = SessionLocal()
 
@@ -154,17 +172,18 @@ async def update_account(
 # Первичная установка
 @api_router.post("/setup")
 async def setup(
-        username: str = Form(...),
-        password: str = Form(...),
-        user_mail_account: str = Form(...),
-        parsing_intervals: str = Form(...),
-        calendar_name: str = Form(...),
-        file: UploadFile = File(...)
+    username: str = Form(...),
+    password: str = Form(...),
+    user_mail_account: str = Form(...),
+    parsing_intervals: str = Form(...),
+    calendar_name: str = Form(...),
+    file: UploadFile = File(...),
 ):
-    return await update_account(username, password, user_mail_account, parsing_intervals, calendar_name, file)
+    return await update_account(
+        username, password, user_mail_account, parsing_intervals, calendar_name, file
+    )
 
 
-# Синхронизация вручную
 @api_router.post("/sync")
 async def sync_now():
     def run_sync():
@@ -172,27 +191,30 @@ async def sync_now():
         record_parse_run("started", "ручной запуск синхронизации")
 
         try:
-            # парсим расписание
-            init_db()
-            schedule = parse_schedule()
+            # Создаем сессию базы данных вручную
+            from schedule_vvsu.database import SessionLocal
 
-            if not schedule:
-                msg = "Не удалось получить расписание."
-                logger.warning(msg)
-                record_parse_run("error", msg)
-                return
+            with SessionLocal() as db:
+                # парсим расписание
+                init_db()
+                schedule = parse_schedule()
 
-            # сохраняем в БД и Google Calendar
-            save_lessons_to_db(schedule)
-            service = authenticate_google_calendar()
-            # calendar_id = get_or_create_calendar(service, settings.CALENDAR_NAME)
-            calendar_id = get_or_create_calendar(service, get_calendar_name())
-            sync_schedule_to_calendar(service, schedule, calendar_id)
+                if not schedule:
+                    msg = "Не удалось получить расписание."
+                    logger.warning(msg)
+                    record_parse_run("error", msg)
+                    return
 
-            # финальная запись об успехе
-            ok_msg = f"синхронизировано {len(schedule)} занятий"
-            logger.info(ok_msg)
-            record_parse_run("success", ok_msg)
+                # сохраняем в БД и Google Calendar
+                save_lessons_to_db(schedule)
+                service = authenticate_google_calendar()
+                calendar_id = get_or_create_calendar(service, get_calendar_name(db))
+                sync_schedule_to_calendar(service, schedule, calendar_id)
+
+                # финальная запись об успехе
+                ok_msg = f"синхронизировано {len(schedule)} занятий"
+                logger.info(ok_msg)
+                record_parse_run("success", ok_msg)
 
         except Exception as e:
             err_msg = f"Ошибка во время синхронизации: {e}"
@@ -294,8 +316,12 @@ async def get_combined_logs():
 async def scheduler_status():
     if SCHEDULER_PID_FILE.exists():
         pid = int(SCHEDULER_PID_FILE.read_text())
-        return {"status": "running" if _pid_running(pid) and pid != CURRENT_PID else "stopped",
-                "pid": pid}
+        return {
+            "status": "running"
+            if _pid_running(pid) and pid != CURRENT_PID
+            else "stopped",
+            "pid": pid,
+        }
     return {"status": "stopped"}
 
 
@@ -311,27 +337,37 @@ async def scheduler_timeline(days: int = 30):
             d0 = today - timedelta(days=shift)
             d1 = d0 + timedelta(days=1)
 
-            rows = (session.query(ParseRun.status, func.count())
-                    .filter(ParseRun.timestamp >= d0,
-                            ParseRun.timestamp < d1)
-                    .group_by(ParseRun.status)
-                    .all())
+            rows = (
+                session.query(ParseRun.status, func.count())
+                .filter(ParseRun.timestamp >= d0, ParseRun.timestamp < d1)
+                .group_by(ParseRun.status)
+                .all()
+            )
 
             if not rows:
-                result.append({"date": d0.isoformat(),
-                               "status": "error",
-                               "message": "нет запусков"})
+                result.append(
+                    {
+                        "date": d0.isoformat(),
+                        "status": "error",
+                        "message": "нет запусков",
+                    }
+                )
                 continue
 
             has_err = any(s in ("error",) for s, _ in rows)
             has_ok = any(s in ("success", "done") for s, _ in rows)
 
-            status = "ok" if has_ok and not has_err else \
-                "warn" if has_ok and has_err else "error"
+            status = (
+                "ok"
+                if has_ok and not has_err
+                else "warn"
+                if has_ok and has_err
+                else "error"
+            )
 
             result.append({"date": d0.isoformat(), "status": status})
 
-        return list(reversed(result))  # старые → новые
+        return list(reversed(result))
     finally:
         session.close()
 
@@ -341,24 +377,23 @@ async def scheduler_overview():
     session = SessionLocal()
     try:
         # статус планировщика
-        st_entry = (session.query(SchedulerStatus)
-                    .order_by(desc(SchedulerStatus.updated_at))
-                    .first())
+        st_entry = (
+            session.query(SchedulerStatus)
+            .order_by(desc(SchedulerStatus.updated_at))
+            .first()
+        )
         status = st_entry.status if st_entry else "stopped"
 
         # интервалы из настроек
         intervals = [t.strip() for t in get_parsing_intervals().split(",") if t.strip()]
 
         # последние прогоны
-        runs_q = (session.query(ParseRun)
-                  .order_by(desc(ParseRun.timestamp))
-                  .limit(20)
-                  .all())
-        runs = [{
-            "time": r.time_str,
-            "status": r.status,
-            "detail": r.detail
-        } for r in runs_q]
+        runs_q = (
+            session.query(ParseRun).order_by(desc(ParseRun.timestamp)).limit(20).all()
+        )
+        runs = [
+            {"time": r.time_str, "status": r.status, "detail": r.detail} for r in runs_q
+        ]
 
         return {"status": status, "intervals": intervals, "runs": runs}
     finally:
@@ -386,8 +421,7 @@ def bot_config(db: Session = Depends(get_db)) -> Dict[str, str]:
 
 @bot_router.patch("/config")
 def update_bot_config(
-        patch: BotConfigPatch,
-        db: Session = Depends(get_db)
+    patch: BotConfigPatch, db: Session = Depends(get_db)
 ) -> Dict[str, bool]:
     """Обновить BOT_TOKEN / ADMIN_IDS без перезапуска контейнера."""
     for field, value in patch.dict(exclude_none=True).items():
@@ -446,11 +480,7 @@ def update_bot_settings(settings: BotSettings, db: Session = Depends(get_db)):
 # Подключение API
 app.include_router(api_router, prefix="/api")  # основные пути
 app.include_router(bot_router)
-app.include_router(
-    bot_router,
-    prefix="/api",
-    include_in_schema=False
-)
+app.include_router(bot_router, prefix="/api", include_in_schema=False)
 
 app.include_router(auth_router)
 
