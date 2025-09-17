@@ -2,6 +2,8 @@ from pydantic import BaseModel
 from datetime import datetime, date, time
 import pytz
 
+# Импорт create_event из events.py
+from schedule_vvsu.google_calendar.events import create_event
 
 class Lesson(BaseModel):
     date: str  # Например: "Вторник 11.02.2025" или "11.02.2025"
@@ -41,12 +43,8 @@ class CalendarEvent(BaseModel):
     @classmethod
     def from_lesson(cls, lesson: Lesson, is_first_of_day: bool = False,
                     timezone_str: str = "Asia/Vladivostok") -> "CalendarEvent":
-        """
-        Преобразует объект Lesson в объект CalendarEvent.
-        Добавляет в описание строку обновления с текущим временем в формате "MM.DD в HH:MM".
-        """
         tz = pytz.timezone(timezone_str)
-        lesson_date = lesson.get_date()  # Получаем дату из строки
+        lesson_date = lesson.get_date()
         start_time, end_time = lesson.get_start_end_times()
         start_dt = tz.localize(datetime.combine(lesson_date, start_time))
         end_dt = tz.localize(datetime.combine(lesson_date, end_time))
@@ -54,11 +52,18 @@ class CalendarEvent(BaseModel):
         description = f"Преподаватель: {lesson.teacher}\nUpdate: {update_time}"
         summary = f"{lesson.discipline} ({lesson.lesson_type})"
         lesson_key = f"{lesson.date}_{lesson.time_range}_{lesson.discipline}_{lesson.teacher}"
+        
+        # Создаем событие через create_event для использования reminders
+        event_body = create_event(
+            lesson.dict(),
+            is_first_of_day=is_first_of_day,
+            lesson_key=lesson_key
+        )
         return cls(
-            summary=summary,
-            start=start_dt,
-            end=end_dt,
-            location=lesson.auditorium,
-            description=description,
-            extended_properties={"lesson_key": lesson_key}
+            summary=event_body["summary"],
+            start=event_body["start"]["dateTime"],
+            end=event_body["end"]["dateTime"],
+            location=event_body["location"],
+            description=event_body["description"],
+            extended_properties=event_body["extendedProperties"]["private"]
         )
