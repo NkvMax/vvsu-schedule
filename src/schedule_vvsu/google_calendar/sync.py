@@ -133,24 +133,33 @@ def sync_schedule_to_calendar(service, schedule: list[Lesson], calendar_id: str)
     logger.info("Добавлено занятий: %d", len(added))
     logger.info("Удалено занятий: %d", len(removed))
 
-    # 4) first lesson per day
+    # 4) first lesson of day for reminders
     sorted_sched = sorted(
         schedule, key=lambda l: (l.get_date(), l.get_start_end_times()[0])
     )
-    first_of_day = {}
+    day_min_starts = {}
     for l in sorted_sched:
-        first_of_day.setdefault(l.get_date(), l)
+        day = l.get_date()
+        start_time, _ = l.get_start_end_times()
+        start_str = start_time.strftime("%H:%M")
+        if day not in day_min_starts or start_str < day_min_starts[day]:
+            day_min_starts[day] = start_str
 
-    # 5) process added (adopt existing without key)
+    def is_first_of_day(lesson: Lesson) -> bool:
+        day = lesson.get_date()
+        start_time, _ = lesson.get_start_end_times()
+        lesson_start_str = start_time.strftime("%H:%M")
+        return day in day_min_starts and lesson_start_str == day_min_starts[day]
+
+    # 5) added (with adoption)
     for lesson in added:
         key = key_of(lesson)
-        is_first = lesson == first_of_day.get(lesson.get_date())
+        is_first = is_first_of_day(lesson)
         try:
             ev = _find_event_by_key(service, calendar_id, key)
             if not ev:
                 ev = _find_event_by_time_and_title(service, calendar_id, lesson)
             if ev:
-                # adopt + update (ensures description with link)
                 ev.setdefault("extendedProperties", {}).setdefault("private", {})[
                     "lesson_key"
                 ] = key
@@ -199,7 +208,7 @@ def sync_schedule_to_calendar(service, schedule: list[Lesson], calendar_id: str)
         except Exception as e:
             logger.error("Ошибка при удалении события: %s", e)
 
-    # 7) update common (always rewrite description to (possibly) add URL)
+    # 7) update common
     tz = pytz.timezone(settings.TIMEZONE)
     update_time = datetime.now(tz).strftime("%m.%d в %H:%M")
     for lesson in schedule:
@@ -231,7 +240,7 @@ def sync_schedule_to_calendar(service, schedule: list[Lesson], calendar_id: str)
                         update_time,
                     )
                 else:
-                    is_first = lesson == first_of_day.get(lesson.get_date())
+                    is_first = is_first_of_day(lesson)
                     body = create_event(
                         lesson.dict(), is_first_of_day=is_first, lesson_key=key
                     )
