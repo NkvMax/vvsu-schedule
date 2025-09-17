@@ -144,25 +144,6 @@ tests = ["pytest (>=3.2.1,!=3.3.0)"]
 typecheck = ["mypy"]
 
 [[package]]
-name = "beautiful-date"
-version = "2.3.0"
-description = "Simple and beautiful way to create date and datetime objects in Python."
-optional = false
-python-versions = ">=3.5.0"
-groups = ["main"]
-files = [
-    {file = "beautiful-date-2.3.0.tar.gz", hash = "sha256:bb9db8f572298ce992a1d7542a22e2bb4959c401bfd451ab02dcbf2732054879"},
-    {file = "beautiful_date-2.3.0-py2.py3-none-any.whl", hash = "sha256:5d11a87ae24912d78bc0d30db21052b68011a65e1070647eb09d2e11a1f1a610"},
-]
-
-[package.dependencies]
-python-dateutil = ">=2.7.0"
-
-[package.extras]
-dev = ["flake8 (>3.8.3)", "freezegun", "pytest (>=5.4)", "pytest-cov (>=2.10)", "tox"]
-tests = ["flake8 (>3.8.3)", "freezegun", "pytest (>=5.4)", "pytest-cov (>=2.10)", "tox"]
-
-[[package]]
 name = "beautifulsoup4"
 version = "4.12.3"
 description = "Screen-scraping library"
@@ -599,31 +580,6 @@ typing-extensions = ">=4.8.0"
 [package.extras]
 all = ["email-validator (>=2.0.0)", "fastapi-cli[standard] (>=0.0.5)", "httpx (>=0.23.0)", "itsdangerous (>=1.1.0)", "jinja2 (>=3.1.5)", "orjson (>=3.2.1)", "pydantic-extra-types (>=2.0.0)", "pydantic-settings (>=2.0.0)", "python-multipart (>=0.0.18)", "pyyaml (>=5.3.1)", "ujson (>=4.0.1,!=4.0.2,!=4.1.0,!=4.2.0,!=4.3.0,!=5.0.0,!=5.1.0)", "uvicorn[standard] (>=0.12.0)"]
 standard = ["email-validator (>=2.0.0)", "fastapi-cli[standard] (>=0.0.5)", "httpx (>=0.23.0)", "jinja2 (>=3.1.5)", "python-multipart (>=0.0.18)", "uvicorn[standard] (>=0.12.0)"]
-
-[[package]]
-name = "gcsa"
-version = "2.6.0"
-description = "Simple API for Google Calendar management"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "gcsa-2.6.0-py2.py3-none-any.whl", hash = "sha256:fcc495ffc0364d09f873e74214f6692a95fc64d7e12237cde4de68d00be9511f"},
-    {file = "gcsa-2.6.0.tar.gz", hash = "sha256:1181ff6bf409b165b872788827a67e7a280cbba784a7b86aef57eeca8d216e9b"},
-]
-
-[package.dependencies]
-beautiful_date = ">=2.0.0"
-google-api-python-client = ">=1.8"
-google-auth-httplib2 = ">=0.0.4"
-google-auth-oauthlib = ">=0.5,<2.0"
-python-dateutil = ">=2.7"
-tzlocal = ">=4,<6"
-
-[package.extras]
-dev = ["flake8", "pep8-naming", "pyfakefs", "pytest", "pytest-cov", "pytest-pep8", "setuptools", "sphinx", "sphinx-rtd-theme", "sphinxcontrib-googleanalytics", "tox", "twine"]
-docs = ["sphinx", "sphinx-rtd-theme", "sphinxcontrib-googleanalytics"]
-tests = ["flake8", "pep8-naming", "pyfakefs", "pytest", "pytest-cov", "pytest-pep8", "setuptools", "tox", "twine"]
 
 [[package]]
 name = "google-api-core"
@@ -2381,4 +2337,4 @@ h11 = ">=0.9.0,<1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9,<4"
-content-hash = "a2f165c9bd4b14c462a0ed7aac87fce3ae2eb3ee78d809998f54b0c4f9383d8f"
+content-hash = "f4622ccdae67579e73045cb61686bb5314e21e2d8a57e90b3550ef313707da01"
