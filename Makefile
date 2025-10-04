@@ -51,24 +51,31 @@ status:
 	@echo "---------------------"
 
 	@echo "$(YELLOW)Состояние сервисов:$(NC)"
-	@docker compose -f $(COMPOSE_FILE) ps --format "  {{.Service}} : {{.State}}" | \
-		sed 's/Up/$(GREEN)Up$(NC)/; s/Exit/$(RED)Exit$(NC)/; s/Stopped/$(RED)Stopped$(NC)/'
+	@services=$$(docker compose -f $(COMPOSE_FILE) ps --format "  {{.Service}} : {{.State}}"); \
+	if [ -z "$$services" ]; then \
+		echo "  $(RED)No running services$(NC)"; \
+	else \
+		echo "$$services" | sed 's/Up/$(GREEN)Up$(NC)/; s/Exit/$(RED)Exit$(NC)/; s/Stopped/$(RED)Stopped$(NC)/'; \
+	fi
 	@echo "---------------------"
 
 	@echo "$(YELLOW)Нагрузка на сервер:$(NC)"
-	@docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" | \
+	@if docker compose -f $(COMPOSE_FILE) ps -q | grep -q .; then \
+		docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" | \
 		sed '1d' | \
 		while read -r name cpu ram; do \
 			printf "  %-20s : CPU %-6s | RAM %-20s\n" "$$name" "$$cpu" "$$ram"; \
-		done || \
-		echo "  Ошибка: невозможно получить статистику (убедись, что контейнеры запущены)"
+		done; \
+	else \
+		echo "  $(RED)Services are not running$(NC)"; \
+	fi
 	@echo "---------------------"
 
 	@echo "$(YELLOW)Настройки:$(NC)"
 	@if [ -f .env ]; then \
 		echo "  TIMEZONE         : $$(grep TIMEZONE .env | cut -d'=' -f2)"; \
 	else \
-		echo "  .env не найден. Проверьте настройки в контейнере."; \
+		echo "  .env not found. Check container settings."; \
 	fi
 	@echo "  URL              : $(GREEN)$(URL)$(NC)"
 	@echo "---------------------"
