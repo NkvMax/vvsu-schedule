@@ -15,6 +15,11 @@ up:
 	@docker compose -f $(COMPOSE_FILE) up -d --build
 	@echo "$(GREEN)Проект запущен! Откройте в браузере: $(URL)$(NC)"
 
+up-fast:
+	@echo "Запуск проект... (без сборки и без pull)"
+	@docker compose -f $(COMPOSE_FILE) up -d --no-build --pull never --remove-orphans
+	@echo "$(GREEN)Проект запущен! Откройте в браузере: $(URL)$(NC)"
+
 down:
 	@echo "Остановка проекта..."
 	@docker compose -f $(COMPOSE_FILE) down
