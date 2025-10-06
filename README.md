@@ -18,6 +18,12 @@
 [![Forks](https://img.shields.io/github/forks/NkvMax/vvsu-schedule)](https://github.com/NkvMax/vvsu-schedule/network/members) 
 [![License](https://img.shields.io/github/license/NkvMax/vvsu-schedule)](https://github.com/NkvMax/vvsu-schedule/blob/main/LICENSE)
 
+<p align="center">
+  <a href="https://github.com/NkvMax/vvsu-schedule">
+    <img src="docs/assets/hero.png" alt="VVSU Schedule Hero Banner" width="80%" height="auto">
+  </a>
+</p>
+
 Проект для автоматической синхронизации расписания занятий из личного кабинета ВВГУ с Google Calendar. Позволяет извлекать расписание с сайта ВВГУ и автоматически создавать или обновлять события в календаре.
 
 ## Screenshots
