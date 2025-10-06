@@ -1,5 +1,23 @@
 # Schedule-VVSU
 
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue) 
+![React](https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black) 
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white) 
+![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=fff) 
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white) 
+![Docker Compose](https://img.shields.io/badge/Docker%20Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white) 
+![Selenium](https://img.shields.io/badge/Selenium-43B02A?style=for-the-badge&logo=selenium&logoColor=fff) 
+![Pydantic](https://img.shields.io/badge/Pydantic-E92063?style=for-the-badge&logo=pydantic&logoColor=white) 
+![Postgres](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white) 
+![Caddy](https://img.shields.io/badge/Caddy-000?style=for-the-badge&logo=caddy&logoColor=white) 
+![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white) 
+![APScheduler](https://img.shields.io/badge/APScheduler-orange?style=for-the-badge&logo=python&logoColor=white) 
+![OAuth](https://img.shields.io/badge/OAuth-0077B5?style=for-the-badge&logo=oauth&logoColor=white) 
+![HTTPS](https://img.shields.io/badge/HTTPS-green?style=for-the-badge&logo=lock&logoColor=white) 
+[![Stars](https://img.shields.io/github/stars/NkvMax/vvsu-schedule)](https://github.com/NkvMax/vvsu-schedule/stargazers) 
+[![Forks](https://img.shields.io/github/forks/NkvMax/vvsu-schedule)](https://github.com/NkvMax/vvsu-schedule/network/members) 
+[![License](https://img.shields.io/github/license/NkvMax/vvsu-schedule)](https://github.com/NkvMax/vvsu-schedule/blob/main/LICENSE)
+
 Проект для автоматической синхронизации расписания занятий из личного кабинета ВВГУ с Google Calendar. Позволяет извлекать расписание с сайта ВВГУ и автоматически создавать или обновлять события в календаре.
 
 ## Screenshots
@@ -105,7 +123,10 @@ https://schedule.localhost:8443
 
 ---
 
-## Настройка Google Calendar (сервисный аккаунт)
+<details>
+<summary><b>Настройка Google Calendar (сервисный аккаунт)</b></summary>
+
+<br>
 
 1. Перейдите в [Google Cloud Console](https://console.cloud.google.com/).
     
@@ -142,8 +163,10 @@ src/schedule_vvsu/json/credentials/service_account.json
 
 - Изменить цвета и другие параметры отображения
 
+</details>
+
 ---
 
 ⭐️ Поставьте **звездочку** на GitHub, если проект оказался полезен. 
 
-🚀 Pull requests и предложения приветствуются!
+Pull requests и предложения приветствуются!
