@@ -1,0 +1,52 @@
+# Python / Poetry
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.dist/
+build/
+.eggs/
+venv/
+.venv/
+.env
+*.log
+
+# OS / Editor garbage
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Playwright / Cache
+playwright/.cache/
+playwright-report/
+test-results/
+
+# Local configs & credentials
+credentials/
+*.json
+*.pem
+*.p12
+*.key
+*.crt
+*.der
+*.db
+*.sqlite
+
+# Logs / debug outputs
+logs/
+debug/
+*.log
+*.tmp
+*.bak
+*.old
+
+# VS Code / JetBrains 
+.vscode/
+.idea/
+
+# Output / artifacts
+reports/
