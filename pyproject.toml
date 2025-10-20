@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "vvsu-lite"
+version = "0.1.0"
+description = "VVSU schedule to Google Calendar (lite, Playwright Firefox)"
+authors = ["Maxim Nikolaev"]
+readme = "README.md"
+packages = [{ include = "vvsu_lite", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+playwright = "^1.45.0"
+google-api-python-client = "^2.149.0"
+google-auth = "^2.35.0"
+python-dotenv = "^1.0.1"
+google-auth-httplib2 = "^0.2.0"
+beautifulsoup4 = "^4.14.2"
+lxml = "^6.0.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.0"
+
+[tool.poetry.scripts]
+vvsu-sync = "vvsu_lite.sync:cli"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
