@@ -1,146 +1,181 @@
+from __future__ import annotations
 
-import os
 import hashlib
 import re
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from zoneinfo import ZoneInfo
+import os
 
-# Event ID rules
-ID_ALLOWED = re.compile(r'^[a-z0-9]{5,1024}$')
-ID_PREFIX = "vvsu"
+from googleapiclient.errors import HttpError
 
-def _tz() -> str:
-    return os.getenv("TIMEZONE", "Asia/Vladivostok")
+# Settings & constants
 
-def _horizon_days() -> int:
+DEFAULT_TZ = os.getenv("LOCAL_TZ", os.getenv("TIMEZONE", "Asia/Vladivostok"))
+HORIZON_DAYS = int(os.getenv("HORIZON_DAYS", "180"))
+ID_PREFIX = os.getenv("GCAL_ID_PREFIX", "vvsu")
+
+def _tz() -> ZoneInfo:
     try:
-        return int(os.getenv("HORIZON_DAYS", "180"))
+        return ZoneInfo(DEFAULT_TZ)
     except Exception:
-        return 180
+        return ZoneInfo("UTC")
 
-def _reminder_minutes() -> int:
-    try:
-        return int(os.getenv("REMINDER_MINUTES", "10"))
-    except Exception:
-        return 10
+def _window_now_to_horizon(tz: ZoneInfo) -> Tuple[str, str]:
+    now = datetime.now(tz)
+    return now.isoformat(), (now + timedelta(days=HORIZON_DAYS)).isoformat()
 
 def _remove_missing() -> bool:
     return os.getenv("GCAL_REMOVE_MISSING", "0") == "1"
 
-def _rfc3339(dt: datetime) -> str:
-    return dt.isoformat(timespec="seconds")
+# Helpers
 
-def _parse_dt(date_str: str, time_str: str, tz: str) -> datetime:
-    d = datetime.strptime(date_str, "%d.%m.%Y")
-    t = datetime.strptime(time_str, "%H:%M").time()
-    return datetime(d.year, d.month, d.day, t.hour, t.minute, tzinfo=ZoneInfo(tz))
+_TAIL_RE = re.compile(r"( вебинар:.*)$", re.IGNORECASE)
 
-def _split_time_range(time_range: str) -> Tuple[str, str]:
-    parts = time_range.replace(' ', '').split('-')
+def clean_title(text: Optional[str]) -> str:
+    if not text:
+        return ""
+    return _TAIL_RE.sub("", text).strip()
+
+_URL_RE = re.compile(r"(https?://[^\s]+)", re.IGNORECASE)
+
+def extract_webinar_url_from_text(text: str) -> Optional[str]:
+    if not text:
+        return None
+    m = _URL_RE.search(text)
+    if not m:
+        # иногда формат "вебинар: <URL>"
+        parts = text.split("вебинар:")
+        if len(parts) > 1:
+            guess = parts[1].strip().split()[0]
+            if guess and not guess.lower().startswith("http"):
+                guess = "https://" + guess
+            return guess
+        return None
+    url = m.group(1).strip()
+    if url and not url.lower().startswith("http"):
+        url = "https://" + url
+    return url
+
+def resolve_webinar_url(d: Dict[str, Any]) -> Optional[str]:
+    """Prefer explicit field; fallback to parsing discipline/subject."""
+    return d.get("webinar_url") or extract_webinar_url_from_text(
+        d.get("discipline") or d.get("subject") or ""
+    )
+
+def generate_lesson_key(lesson: Dict[str, Any]) -> str:
+    """Stable key: (date | start | cleaned title | lesson_type) lower-case."""
+    date = lesson.get("date", "")
+    tr = (lesson.get("time_range") or "")
+    start = tr.replace("—", "-").replace("–", "-").split("-")[0].strip()
+    if isinstance(start, str):
+        start = start[:5]  # "18:30:00" -> "18:30"
+    title = clean_title(lesson.get("discipline") or lesson.get("subject") or "")
+    typ = (lesson.get("lesson_type") or "").strip().lower()
+    return f"{date}|{start}|{title}|{typ}".lower()
+
+def make_event_id_from_key(key: str) -> str:
+    return f"{ID_PREFIX}{hashlib.sha1(key.encode('utf-8')).hexdigest()}"
+
+# Build event payload
+
+def _parse_start_end(date_str: str, time_range: str, tz: ZoneInfo) -> Tuple[str, str]:
+    s = time_range.replace("—", "-").replace("–", "-")
+    parts = [p.strip() for p in s.split("-", 1)]
     if len(parts) != 2:
         raise ValueError(f"Bad time_range: {time_range!r}")
-    return parts[0], parts[1]
+    fmt = "%H:%M:%S" if parts[0].count(":") == 2 else "%H:%M"
+    start_dt = datetime.strptime(f"{date_str} {parts[0]}", f"%d.%m.%Y {fmt}")
+    end_dt   = datetime.strptime(f"{date_str} {parts[1]}", f"%d.%m.%Y {fmt}")
+    start_iso = datetime.combine(start_dt.date(), start_dt.time(), tzinfo=tz).isoformat()
+    end_iso   = datetime.combine(end_dt.date(), end_dt.time(), tzinfo=tz).isoformat()
+    return start_iso, end_iso
 
-def _fingerprint(lesson) -> str:
-    pieces = [
-        lesson.date,
-        lesson.time_range,
-        lesson.discipline,
-        getattr(lesson, "teacher", "") or "",
-        getattr(lesson, "auditorium", "") or "",
-        getattr(lesson, "lesson_type", "") or "",
-        getattr(lesson, "webinar_url", "") or "",
-    ]
-    return hashlib.sha1("|".join(pieces).encode("utf-8")).hexdigest()
-
-def make_event_id(lesson) -> str:
-    h = _fingerprint(lesson)
-    eid = f"{ID_PREFIX}{h}".lower()
-    # Safety: ограничим алфавит и длину
-    if not ID_ALLOWED.match(eid):
-        eid = re.sub(r'[^a-z0-9]', '', eid) or f"{ID_PREFIX}{h}"
-    return eid[:1024]
-
-def _build_description(lesson) -> str:
-    lines = []
-    teacher = getattr(lesson, "teacher", None)
+def build_description(lesson: Dict[str, Any], tz: ZoneInfo) -> str:
+    """Teacher, form, link and Update timestamp (local)."""
+    parts: List[str] = []
+    teacher = lesson.get("teacher")
     if teacher:
-        lines.append(f"Преподаватель: {teacher}")
-    lesson_type = getattr(lesson, "lesson_type", None)
-    if lesson_type:
-        lines.append(f"Форма: {lesson_type}")
-    auditorium = getattr(lesson, "auditorium", None)
-    if auditorium:
-        lines.append(f"Аудитория: {auditorium}")
-    webinar = getattr(lesson, "webinar_url", None)
-    if webinar:
-        lines.append(f"Вебинар: {webinar}")
-    return "\n".join(lines)
+        parts.append(f"Преподаватель: {teacher}")
+    form = (lesson.get("lesson_type") or "").strip()
+    if form:
+        parts.append(f"Форма: {form}")
+    url = resolve_webinar_url(lesson)
+    if url:
+        parts.append(f"Ссылка: {url}")
+    now = datetime.now(tz)
+    update_time = now.strftime("%m.%d в %H:%M")
+    parts.append(f"Update: {update_time}")
+    return "\n".join(parts)
 
-def _event_body(lesson) -> Dict:
+def _event_body(lesson_obj) -> Dict[str, Any]:
+    # Accept dataclass or mapping
+    if is_dataclass(lesson_obj):
+        d = asdict(lesson_obj)
+    elif isinstance(lesson_obj, dict):
+        d = dict(lesson_obj)
+    else:
+        d = getattr(lesson_obj, "__dict__", {})
     tz = _tz()
-    start_s, end_s = _split_time_range(lesson.time_range)
-    dt_start = _parse_dt(lesson.date, start_s, tz)
-    dt_end   = _parse_dt(lesson.date, end_s, tz)
+    start_iso, end_iso = _parse_start_end(d["date"], d["time_range"], tz)
+    title = clean_title(d.get("discipline") or d.get("subject") or "")
+    summary = f"{title} ({d.get('lesson_type','')})".strip()
+    room = (d.get("auditorium") or d.get("room") or "").strip()
+    url = resolve_webinar_url(d)
 
-    minutes = _reminder_minutes()
-    reminders = {"useDefault": True}
-    if minutes and minutes > 0:
-        reminders = {"useDefault": False, "overrides": [{"method": "popup", "minutes": minutes}]}
+    # Location logic:
+    if url:
+        location = url
+    elif room and "вебинар" in room.lower():
+        location = room
+    else:
+        location = room
 
-    body = {
-        "summary": lesson.discipline,
-        "description": _build_description(lesson),
-        "start": {"dateTime": _rfc3339(dt_start), "timeZone": tz},
-        "end":   {"dateTime": _rfc3339(dt_end),   "timeZone": tz},
-        "reminders": reminders,
-        "extendedProperties": {
-            "private": {
-                "vvsu.fingerprint": _fingerprint(lesson),
-                "vvsu.webinar_url": (getattr(lesson, "webinar_url", "") or ""),
-            }
-        }
+    desc = build_description(d, tz)
+
+    body: Dict[str, Any] = {
+        "summary": summary,
+        "location": location,
+        "description": desc,
+        "start": {"dateTime": start_iso, "timeZone": str(tz)},
+        "end":   {"dateTime": end_iso,   "timeZone": str(tz)},
+        "extendedProperties": {"private": {}}
     }
-
-    # Предпочитаем ссылку на вебинар как location, иначе аудиторию
-    if getattr(lesson, "webinar_url", None):
-        body["location"] = lesson.webinar_url
-    elif getattr(lesson, "auditorium", None):
-        body["location"] = lesson.auditorium
-
+    # lesson_key & updated_at
+    key = generate_lesson_key(d)
+    body["extendedProperties"]["private"]["lesson_key"] = key
+    body["extendedProperties"]["private"]["updated_at"] = datetime.now(tz).isoformat()
     return body
 
-def _equal_event(existing: Dict, desired: Dict) -> bool:
-    for k in ("summary", "description", "location"):
-        if (existing.get(k) or "") != (desired.get(k) or ""):
-            return False
+# Equality ignoring 'Update:' line
 
-    for edge in ("start", "end"):
-        a, b = existing.get(edge, {}), desired.get(edge, {})
-        if (a.get("dateTime") or "") != (b.get("dateTime") or ""):
-            return False
-        if (a.get("timeZone") or "") != (b.get("timeZone") or ""):
-            return False
+def _norm_desc_no_update(text: str) -> str:
+    if not text:
+        return ""
+    lines = [ln for ln in str(text).splitlines() if not ln.strip().startswith("Update:")]
+    return "\n".join(lines).strip()
 
-    a, b = existing.get("reminders", {}), desired.get("reminders", {})
-    if (a.get("useDefault") != b.get("useDefault")):
+def _equal_event(cur: Dict[str, Any], desired: Dict[str, Any]) -> bool:
+    if (cur.get("summary") or "") != (desired.get("summary") or ""):
         return False
-    if not a.get("useDefault"):
-        if (a.get("overrides") or []) != (b.get("overrides") or []):
-            return False
-
-    ap = ((existing.get("extendedProperties") or {}).get("private") or {})
-    bp = ((desired.get("extendedProperties") or {}).get("private") or {})
-    for k in ("vvsu.fingerprint", "vvsu.webinar_url"):
-        if (ap.get(k) or "") != (bp.get(k) or ""):
-            return False
-
+    if (cur.get("location") or "") != (desired.get("location") or ""):
+        return False
+    def dt(ev, key): return ((ev.get(key) or {}).get("dateTime"))
+    if dt(cur, "start") != dt(desired, "start"):
+        return False
+    if dt(cur, "end") != dt(desired, "end"):
+        return False
+    if _norm_desc_no_update(cur.get("description") or "") != _norm_desc_no_update(desired.get("description") or ""):
+        return False
     return True
 
-def _list_existing_events(service, calendar_id: str, time_min: str, time_max: str) -> Dict[str, Dict]:
-    out: Dict[str, Dict] = {}
-    token = None
+# Existing events fetch
+
+def _fetch_events_map(service, calendar_id: str, time_min: str, time_max: str) -> Tuple[Dict[str, Dict], Dict[str, Dict]]:
+    by_id: Dict[str, Dict] = {}
+    by_key: Dict[str, Dict] = {}
+    token: Optional[str] = None
     while True:
         resp = service.events().list(
             calendarId=calendar_id,
@@ -149,66 +184,109 @@ def _list_existing_events(service, calendar_id: str, time_min: str, time_max: st
             timeMin=time_min,
             timeMax=time_max,
             maxResults=2500,
-            pageToken=token,
+            pageToken=token
         ).execute()
         for ev in resp.get("items", []):
-            if "id" in ev:
-                out[ev["id"]] = ev
+            eid = ev.get("id")
+            if eid:
+                by_id[eid] = ev
+            key = ((ev.get("extendedProperties") or {}).get("private") or {}).get("lesson_key")
+            if key:
+                by_key[key] = ev
         token = resp.get("nextPageToken")
         if not token:
             break
-    return out
+    return by_id, by_key
 
-def _window_now_to_horizon(tz: str) -> Tuple[str, str]:
-    now = datetime.now(ZoneInfo(tz))
-    hi  = now + timedelta(days=_horizon_days())
-    return now.isoformat(timespec="seconds"), hi.isoformat(timespec="seconds")
+# Main
 
 def upsert_to_calendar(service, calendar_id: str, lessons: List, logger):
     tz = _tz()
     time_min, time_max = _window_now_to_horizon(tz)
 
-    existing = _list_existing_events(service, calendar_id, time_min, time_max)
+    existing_by_id, existing_by_key = _fetch_events_map(service, calendar_id, time_min, time_max)
 
-    desired_map: Dict[str, Dict] = {}
-    order: List[str] = []
+    created = updated = recreated = unchanged = 0
+    desired_ids: List[str] = []
 
+    # Build desired
+    desired: Dict[str, Dict] = {}
     for lesson in lessons:
-        eid = make_event_id(lesson)
         body = _event_body(lesson)
-        body_with_id = {**body, "id": eid}
-        desired_map[eid] = body_with_id
-        order.append(eid)
+        key = body["extendedProperties"]["private"]["lesson_key"]
+        eid = make_event_id_from_key(key)
+        body["id"] = eid
+        desired[eid] = body
+        desired_ids.append(eid)
 
-    created = updated = unchanged = 0
-    for eid in order:
-        body = desired_map[eid]
-        cur = existing.get(eid)
-        if not cur:
+    # Upsert
+    for eid, body in desired.items():
+        key = body["extendedProperties"]["private"]["lesson_key"]
+        cur = existing_by_id.get(eid) or existing_by_key.get(key)
+
+        if cur is None:
             logger.debug("insert event id=%s", eid)
-            service.events().insert(calendarId=calendar_id, body=body, sendUpdates="none").execute()
+            try:
+                service.events().insert(calendarId=calendar_id, body=body, sendUpdates="none").execute()
+            except HttpError as e:
+                if getattr(getattr(e, "resp", None), "status", None) == 409:
+                    service.events().update(calendarId=calendar_id, eventId=eid, body=body, sendUpdates="none").execute()
+                else:
+                    raise
             created += 1
+            continue
+
+        cur_id = cur.get("id")
+        if cur_id != eid:
+            logger.debug("recreate (normalize id) old_id=%s -> new_id=%s", cur_id, eid)
+            try:
+                service.events().delete(calendarId=calendar_id, eventId=cur_id, sendUpdates="none").execute()
+            except Exception:
+                pass
+            try:
+                service.events().insert(calendarId=calendar_id, body=body, sendUpdates="none").execute()
+            except HttpError as e:
+                if getattr(getattr(e, "resp", None), "status", None) == 409:
+                    service.events().update(calendarId=calendar_id, eventId=eid, body=body, sendUpdates="none").execute()
+                else:
+                    raise
+            recreated += 1
+            continue
+
+        if _equal_event(cur, body):
+            unchanged += 1
         else:
-            if _equal_event(cur, body):
-                unchanged += 1
-            else:
-                logger.debug("update event id=%s", eid)
-                service.events().update(calendarId=calendar_id, eventId=eid, body=body, sendUpdates="none").execute()
-                updated += 1
+
+            logger.debug("delete+create event id=%s (content changed)", eid)
+            try:
+                service.events().delete(calendarId=calendar_id, eventId=eid, sendUpdates="none").execute()
+            except Exception:
+                pass
+            try:
+                service.events().insert(calendarId=calendar_id, body=body, sendUpdates="none").execute()
+            except HttpError as e:
+                if getattr(getattr(e, "resp", None), "status", None) == 409:
+                    service.events().update(calendarId=calendar_id, eventId=eid, body=body, sendUpdates="none").execute()
+                else:
+                    raise
+            recreated += 1
+
 
     removed = 0
     if _remove_missing():
-        keep = set(desired_map.keys())
-        for eid, ev in list(existing.items()):
-            if not eid.startswith(ID_PREFIX):
+        keep = set(desired_ids)
+        for eid, ev in list(existing_by_id.items()):
+            if not str(eid).startswith(ID_PREFIX):
                 continue
             if eid not in keep:
-                logger.debug("delete event id=%s", eid)
-                service.events().delete(calendarId=calendar_id, eventId=eid, sendUpdates="none").execute()
-                removed += 1
+                try:
+                    service.events().delete(calendarId=calendar_id, eventId=eid, sendUpdates="none").execute()
+                    removed += 1
+                except Exception:
+                    pass
 
     logger.info(
-        "Google Calendar sync: created=%d, updated=%d, unchanged=%d%s",
-        created, updated, unchanged,
+        "Google Calendar sync: created=%d, recreated=%d, updated=%d, unchanged=%d%s",
+        created, recreated, updated, unchanged,
         f", removed={removed}" if _remove_missing() else ""
     )
