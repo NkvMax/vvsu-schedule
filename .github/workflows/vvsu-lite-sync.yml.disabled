@@ -1,0 +1,83 @@
+name: vvsu-lite-sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 13:00 Владивосток (UTC+10) = 03:00 UTC
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    concurrency:
+      group: vvsu-lite
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout lite-version
+        uses: actions/checkout@v4
+        with:
+          ref: lite-version
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ runner.os }}-playwright-
+
+      - name: Install deps
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+        run: |
+          pip install -r requirements.txt
+          # используем Firefox, т.к. в коде p.firefox.launch(...)
+          python -m playwright install --with-deps firefox
+
+      - name: Run sync (safe env injection)
+        env:
+          ACTIONS_ENV: ${{ secrets.ACTIONS_ENV }}
+          PYTHONPATH: src
+          LOG_LEVEL: INFO
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 1) запишем секрет в .env
+          printf '%s\n' "$ACTIONS_ENV" > .env
+
+          # 2) загрузим .env только для этого шага
+          set -a; source .env; set +a
+
+          # 3) замаскируем критичные значения
+          for k in VVSU_LOGIN VVSU_PASSWORD GOOGLE_CREDENTIALS_B64; do
+            v="${!k:-}"; [ -n "$v" ] && echo "::add-mask::$v"
+          done
+
+          # 4) соберем service account JSON (если задан)
+          if [ -n "${GOOGLE_CREDENTIALS_B64:-}" ]; then
+            echo "$GOOGLE_CREDENTIALS_B64" | base64 -d > sa.json
+            export GOOGLE_APPLICATION_CREDENTIALS="$PWD/sa.json"
+          fi
+
+          # 5) быстрые проверки
+          [ -n "${VVSU_LOGIN:-}" ]    || { echo "Missing VVSU_LOGIN"; exit 1; }
+          [ -n "${VVSU_PASSWORD:-}" ] || { echo "Missing VVSU_PASSWORD"; exit 1; }
+
+          # 6) запуск
+          python -u -m vvsu_lite.sync
+
+      - name: Cleanup
+        if: always()
+        run: rm -f sa.json .env || true
