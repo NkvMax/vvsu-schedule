@@ -26,8 +26,11 @@
 
 Проект для автоматической синхронизации расписания занятий из личного кабинета ВВГУ с Google Calendar. Позволяет извлекать расписание с сайта ВВГУ и автоматически создавать или обновлять события в календаре.
 
+> [!TIP]  
+> Доступна упрощенная **Lite-версия**, работающая только через GitHub Actions: [lite-version](https://github.com/NkvMax/vvsu-schedule/tree/lite-version)  
+> Также доступна **Lite Self-Hosted** версия для запуска на своем сервере: [lite-selfhosted](https://github.com/NkvMax/vvsu-schedule/tree/lite-selfhosted)
 
->Доступна упрощенная **Lite-версия**, работающая только через GitHub Actions. Смотреть ветку: [lite-version](https://github.com/NkvMax/vvsu-schedule/tree/lite-version)
+
 
 ## Screenshots
 
