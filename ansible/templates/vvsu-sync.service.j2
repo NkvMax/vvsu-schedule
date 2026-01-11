@@ -1,0 +1,17 @@
+[Unit]
+Description=VVSU schedule -> Google Calendar sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ sync_user }}
+WorkingDirectory={{ project_dir }}
+EnvironmentFile={{ env_file }}
+Environment=HOME={{ sync_home_dir }}
+Environment=XDG_CACHE_HOME={{ sync_home_dir }}/.cache
+Environment=PLAYWRIGHT_BROWSERS_PATH={{ playwright_browsers_path }}
+ExecStart={{ venv_dir }}/bin/python -m vvsu_lite.sync
+
+[Install]
+WantedBy=multi-user.target

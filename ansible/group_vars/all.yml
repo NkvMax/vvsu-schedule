@@ -1,0 +1,6 @@
+# Default vars for VVSU Lite Sync (Ansible)
+service_name: vvsu-sync
+on_calendar: "*-*-* 03:00:00"
+sync_user: "{{ ansible_user_id }}"
+# For remote SSH runs, set an absolute path explicitly:
+# project_dir: /home/maxim/projects/schedule-vvsu-lite

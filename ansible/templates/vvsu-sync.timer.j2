@@ -1,0 +1,10 @@
+[Unit]
+Description=Run VVSU sync by schedule
+
+[Timer]
+OnCalendar={{ on_calendar }}
+Persistent=true
+Unit={{ service_name }}.service
+
+[Install]
+WantedBy=timers.target

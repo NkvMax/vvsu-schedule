@@ -1,0 +1,195 @@
+---
+- name: VVSU schedule -> Google Calendar (bootstrap + systemd timer)
+  hosts: local
+  gather_facts: true
+
+  vars_files:
+    - group_vars/all.yml
+
+  vars:
+    # Base apt packages needed for building Python deps + Playwright deps installer
+    apt_packages:
+      - ca-certificates
+      - curl
+      - git
+      - make
+      - build-essential
+      - libssl-dev
+      - zlib1g-dev
+      - libbz2-dev
+      - libreadline-dev
+      - libsqlite3-dev
+      - libncursesw5-dev
+      - xz-utils
+      - tk-dev
+      - libxml2-dev
+      - libxmlsec1-dev
+      - libffi-dev
+      - liblzma-dev
+
+  tasks:
+    - name: Resolve project directory (realpath)
+      ansible.builtin.shell: |
+        set -e
+        cd "{{ playbook_dir }}/.."
+        pwd -P
+      args:
+        executable: /bin/bash
+      register: project_dir_resolved
+      changed_when: false
+      tags: [always]
+
+    - name: Set derived paths
+      ansible.builtin.set_fact:
+        project_dir: "{{ project_dir | default(project_dir_resolved.stdout | trim) }}"
+        venv_dir: "{{ (project_dir | default(project_dir_resolved.stdout | trim)) + '/.venv' }}"
+        env_file: "{{ (project_dir | default(project_dir_resolved.stdout | trim)) + '/.env' }}"
+      tags: [always]
+
+    - name: Resolve sync user home (getent)
+      ansible.builtin.command: "getent passwd {{ sync_user }} | cut -d: -f6"
+      register: sync_home
+      changed_when: false
+      failed_when: false
+      tags: [always]
+
+    - name: Set Playwright cache paths
+      ansible.builtin.set_fact:
+        sync_home_dir: "{{ (sync_home.stdout | trim) if (sync_home.stdout | trim) else ('/home/' ~ sync_user) }}"
+        playwright_browsers_path: "{{ ((sync_home.stdout | trim) if (sync_home.stdout | trim) else ('/home/' ~ sync_user)) ~ '/.cache/ms-playwright' }}"
+      tags: [always]
+
+    - name: Ensure Playwright browsers cache dir exists
+      become: true
+      ansible.builtin.file:
+        path: "{{ playwright_browsers_path }}"
+        state: directory
+        owner: "{{ sync_user }}"
+        group: "{{ sync_user }}"
+        mode: "0755"
+      tags: [build]
+
+    - name: Install base packages (apt)
+      become: true
+      ansible.builtin.apt:
+        update_cache: true
+        name: "{{ apt_packages }}"
+        state: present
+      tags: [build]
+
+    - name: Choose python for venv (prefer python3.11 if available)
+      ansible.builtin.shell: |
+        if command -v python3.11 >/dev/null 2>&1; then
+          echo python3.11
+        else
+          echo python3
+        fi
+      args:
+        executable: /bin/bash
+      register: py_bin
+      changed_when: false
+      tags: [build]
+
+    - name: Create venv (.venv)
+      become: false
+      ansible.builtin.command: "{{ py_bin.stdout | trim }} -m venv {{ venv_dir }}"
+      args:
+        creates: "{{ venv_dir }}/bin/python"
+      tags: [build]
+
+    - name: Upgrade pip tooling
+      become: false
+      ansible.builtin.command: "{{ venv_dir }}/bin/python -m pip install -U pip wheel setuptools"
+      tags: [build]
+
+    - name: Install requirements.txt
+      become: false
+      ansible.builtin.command: "{{ venv_dir }}/bin/pip install -r {{ project_dir }}/requirements.txt"
+      tags: [build]
+
+    - name: Install project itself (editable) so `python -m vvsu_lite.sync` works
+      become: false
+      ansible.builtin.command: "{{ venv_dir }}/bin/pip install -e {{ project_dir }}"
+      tags: [build]
+
+    - name: Install Playwright system deps for Firefox (needs sudo)
+      become: true
+      ansible.builtin.command: "{{ venv_dir }}/bin/python -m playwright install-deps firefox"
+      tags: [build]
+
+    - name: Detect existing Playwright Firefox executable in cache (skip download if present)
+      become: false
+      ansible.builtin.shell: |
+        ls -1 "{{ playwright_browsers_path }}"/firefox-*/firefox/firefox 2>/dev/null | head -n 1 || true
+      args:
+        executable: /bin/bash
+      register: pw_firefox_exe
+      changed_when: false
+      tags: [build]
+
+    - name: Install Playwright Firefox (per-user cache) (only if missing)
+      become: false
+      ansible.builtin.command: "{{ venv_dir }}/bin/python -m playwright install firefox"
+      environment:
+        HOME: "{{ sync_home_dir }}"
+        PLAYWRIGHT_BROWSERS_PATH: "{{ playwright_browsers_path }}"
+      when: (pw_firefox_exe.stdout | trim) == ""
+      async: 1800
+      poll: 5
+      tags: [build]
+
+    - name: Secure secrets if present (.env + service_account.json)
+      become: true
+      ansible.builtin.file:
+        path: "{{ item }}"
+        mode: "0600"
+      loop:
+        - "{{ project_dir }}/.env"
+        - "{{ project_dir }}/credentials/service_account.json"
+      ignore_errors: true
+      tags: [build]
+
+    - name: Install systemd service unit
+      become: true
+      ansible.builtin.template:
+        src: "templates/vvsu-sync.service.j2"
+        dest: "/etc/systemd/system/{{ service_name }}.service"
+        mode: "0644"
+      tags: [systemd]
+
+    - name: Install systemd timer unit
+      become: true
+      ansible.builtin.template:
+        src: "templates/vvsu-sync.timer.j2"
+        dest: "/etc/systemd/system/{{ service_name }}.timer"
+        mode: "0644"
+      tags: [systemd]
+
+    - name: Reload systemd
+      become: true
+      ansible.builtin.systemd:
+        daemon_reload: true
+      tags: [systemd]
+
+    - name: Enable + start timer
+      become: true
+      ansible.builtin.systemd:
+        name: "{{ service_name }}.timer"
+        enabled: true
+        state: started
+      tags: [systemd]
+
+    - name: Test run service (oneshot)
+      become: true
+      ansible.builtin.systemd:
+        name: "{{ service_name }}.service"
+        state: started
+      register: oneshot_result
+      failed_when: false
+      tags: [systemd]
+
+    - name: Show hint if oneshot failed
+      ansible.builtin.debug:
+        msg: "Oneshot test failed. Check: systemctl status {{ service_name }}.service -l && journalctl -u {{ service_name }}.service -n 80 -o cat"
+      when: oneshot_result is failed
+      tags: [systemd]
