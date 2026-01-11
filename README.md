@@ -76,6 +76,9 @@
 
 ## Возможности
 
+<details>
+<summary><b>Развернуть</b></summary>
+
 - **Web-интерфейс** для управления планировщиком и ботом.
     
 - **Telegram-бот** для удаленной синхронизации расписания.
@@ -96,11 +99,13 @@
 - HTTPS с Caddy (internal CA) и автоматическим обновлением сертификатов  
 - Docker-compose (prod/dev), multi-stage сборка, healthchecks для Postgres и Selenium  
 - Единая конфигурация через `.env` и Pydantic Settings  
-
+</details>
 
 ---
 
 ## Быстрый старт (Docker)
+<details>
+<summary><b>Развернуть</b></summary>
 
 Склонируйте репозиторий и перейдите в каталог:
 
@@ -132,6 +137,8 @@ ssh -L 8443:localhost:443 user@server_ip
 ```
 https://schedule.localhost:8443
 ```
+
+</details>
 
 ---
 
